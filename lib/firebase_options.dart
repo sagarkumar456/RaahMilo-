@@ -37,26 +37,26 @@ class DefaultFirebaseOptions {
     apiKey: 'AIzaSyDemoPlaceholderWebApiKey12345678',
     appId: '1:123456789012:web:abcdef1234567890',
     messagingSenderId: '123456789012',
-    projectId: 'trackmyphone-demo',
-    authDomain: 'trackmyphone-demo.firebaseapp.com',
-    storageBucket: 'trackmyphone-demo.appspot.com',
+    projectId: 'trackmyphone-gps',
+    authDomain: 'trackmyphone-gps.firebaseapp.com',
+    storageBucket: 'trackmyphone-gps.appspot.com',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyDemoPlaceholderAndroidApiKey123456',
     appId: '1:123456789012:android:abcdef1234567890',
     messagingSenderId: '123456789012',
-    projectId: 'trackmyphone-demo',
-    storageBucket: 'trackmyphone-demo.appspot.com',
+    projectId: 'trackmyphone-gps',
+    storageBucket: 'trackmyphone-gps.appspot.com',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyDemoPlaceholderIosApiKey1234567890',
     appId: '1:123456789012:ios:abcdef1234567890',
     messagingSenderId: '123456789012',
-    projectId: 'trackmyphone-demo',
-    storageBucket: 'trackmyphone-demo.appspot.com',
-    iosBundleId: 'com.trackmyphone.trackmyphone',
+    projectId: 'trackmyphone-gps',
+    storageBucket: 'trackmyphone-gps.appspot.com',
+    iosBundleId: 'com.trackmyphone.gps',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
