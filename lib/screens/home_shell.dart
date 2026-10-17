@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import '../core/app_colors.dart';
 import '../services/notification_service.dart';
 import 'dashboard_screen.dart';
 import 'live_map_screen.dart';
+import 'location_disabled_screen.dart';
 import 'trip_history_screen.dart';
 import 'profile_screen.dart';
 import 'notifications_screen.dart';
@@ -17,13 +20,63 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late int _selectedTab;
+  StreamSubscription<ServiceStatus>? _serviceStatusSub;
+  bool _isLocationSheetShowing = false;
 
   @override
   void initState() {
     super.initState();
     _selectedTab = widget.initialTab;
+    WidgetsBinding.instance.addObserver(this);
+    _listenForLocationService();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkLocationServiceStatus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _serviceStatusSub?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _listenForLocationService() {
+    _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
+      if (status == ServiceStatus.disabled) {
+        _showLocationDisabledScreen();
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkLocationServiceStatus();
+    }
+  }
+
+  Future<void> _checkLocationServiceStatus() async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    if (!enabled && mounted) {
+      _showLocationDisabledScreen();
+    }
+  }
+
+  void _showLocationDisabledScreen() {
+    if (_isLocationSheetShowing || !mounted) return;
+    _isLocationSheetShowing = true;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LocationDisabledScreen(),
+        fullscreenDialog: true,
+      ),
+    ).then((_) {
+      _isLocationSheetShowing = false;
+    });
   }
 
   void _switchTab(int index) {
@@ -44,120 +97,121 @@ class _HomeShellState extends State<HomeShell> {
             SystemNavigator.pop();
           },
           child: Scaffold(
-          backgroundColor: Colors.white,
-          appBar: AppBar(
-            title: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset(
-                  'assets/images/logo_pin.png',
-                  height: 26,
-                  fit: BoxFit.contain,
-                ),
-                const SizedBox(width: 8),
-                const Text(
-                  'RaahMilo',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.navyDark,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ],
-            ),
-            automaticallyImplyLeading: false,
-            actions: [
-              Stack(
-                alignment: Alignment.center,
+            backgroundColor: Colors.white,
+            appBar: AppBar(
+              title: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.notifications_none_rounded, size: 26),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const NotificationsScreen()),
-                      );
-                    },
+                  Image.asset(
+                    'assets/images/logo_pin.png',
+                    height: 26,
+                    fit: BoxFit.contain,
                   ),
-                  if (unreadCount > 0)
-                    Positioned(
-                      top: 10,
-                      right: 10,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: AppColors.danger,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 16,
-                          minHeight: 16,
-                        ),
-                        child: Text(
-                          '$unreadCount',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                  const SizedBox(width: 8),
+                  const Text(
+                    'RaahMilo',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.navyDark,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ],
+              ),
+              automaticallyImplyLeading: false,
+              actions: [
+                Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.notifications_none_rounded, size: 26),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                        );
+                      },
+                    ),
+                    if (unreadCount > 0)
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: const BoxDecoration(
+                            color: AppColors.danger,
+                            shape: BoxShape.circle,
+                          ),
+                          constraints: const BoxConstraints(
+                            minWidth: 16,
+                            minHeight: 16,
+                          ),
+                          child: Text(
+                            '$unreadCount',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                  ],
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+            body: IndexedStack(
+              index: _selectedTab,
+              children: [
+                DashboardScreen(onNavigateTab: _switchTab),
+                const LiveMapScreen(),
+                const TripHistoryScreen(),
+                const ProfileScreen(),
+              ],
+            ),
+            bottomNavigationBar: Container(
+              decoration: const BoxDecoration(
+                boxShadow: [
+                  BoxShadow(
+                    color: Color(0x0F000000),
+                    blurRadius: 10,
+                    offset: Offset(0, -3),
+                  ),
                 ],
               ),
-              const SizedBox(width: 8),
-            ],
-          ),
-          body: IndexedStack(
-            index: _selectedTab,
-            children: [
-              DashboardScreen(onNavigateTab: _switchTab),
-              const LiveMapScreen(),
-              const TripHistoryScreen(),
-              const ProfileScreen(),
-            ],
-          ),
-          bottomNavigationBar: Container(
-            decoration: const BoxDecoration(
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x0F000000),
-                  blurRadius: 10,
-                  offset: Offset(0, -3),
-                ),
-              ],
-            ),
-            child: NavigationBar(
-              selectedIndex: _selectedTab,
-              onDestinationSelected: _switchTab,
-              backgroundColor: Colors.white,
-              elevation: 0,
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home_rounded),
-                  label: 'Home',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.map_outlined),
-                  selectedIcon: Icon(Icons.map_rounded),
-                  label: 'Map',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.history_rounded),
-                  selectedIcon: Icon(Icons.history_rounded),
-                  label: 'History',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.person_outline_rounded),
-                  selectedIcon: Icon(Icons.person_rounded),
-                  label: 'Profile',
-                ),
-              ],
+              child: NavigationBar(
+                selectedIndex: _selectedTab,
+                onDestinationSelected: _switchTab,
+                backgroundColor: Colors.white,
+                elevation: 0,
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.home_outlined),
+                    selectedIcon: Icon(Icons.home_rounded),
+                    label: 'Home',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.map_outlined),
+                    selectedIcon: Icon(Icons.map_rounded),
+                    label: 'Map',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.history_rounded),
+                    selectedIcon: Icon(Icons.history_rounded),
+                    label: 'History',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.person_outline_rounded),
+                    selectedIcon: Icon(Icons.person_rounded),
+                    label: 'Profile',
+                  ),
+                ],
+              ),
             ),
           ),
-        ));
+        );
       },
     );
   }

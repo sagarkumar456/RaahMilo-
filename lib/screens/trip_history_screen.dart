@@ -16,6 +16,12 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
   String _selectedFilter = 'All';
   final List<String> _filters = ['All', 'Today', 'This Week', 'This Month'];
 
+  @override
+  void initState() {
+    super.initState();
+    trackingService.loadHistory();
+  }
+
   List<TripModel> _filterTrips(List<TripModel> allTrips) {
     if (_selectedFilter == 'All') return allTrips;
     final now = DateTime.now();
@@ -45,6 +51,11 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
             title: const Text('Trip History'),
             actions: [
               IconButton(
+                icon: const Icon(Icons.refresh_rounded, size: 22),
+                tooltip: 'Refresh History',
+                onPressed: () => trackingService.loadHistory(),
+              ),
+              IconButton(
                 icon: const Icon(Icons.calendar_today_outlined, size: 20),
                 onPressed: () {
                   showDatePicker(
@@ -55,81 +66,94 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                   );
                 },
               ),
-              IconButton(
-                icon: const Icon(Icons.filter_list_rounded, size: 22),
-                onPressed: () {},
-              ),
             ],
           ),
-          body: Column(
-            children: [
-              const SizedBox(height: 8),
-              // Filter pills row
-              SizedBox(
-                height: 38,
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _filters.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) {
-                    final filter = _filters[index];
-                    final isSelected = filter == _selectedFilter;
-                    return GestureDetector(
-                      onTap: () => setState(() => _selectedFilter = filter),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: isSelected ? AppColors.primary : AppColors.tileBackground,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Center(
-                          child: Text(
-                            filter,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                              color: isSelected ? Colors.white : AppColors.textSecondary,
+          body: RefreshIndicator(
+            onRefresh: () => trackingService.loadHistory(),
+            color: AppColors.primary,
+            child: Column(
+              children: [
+                const SizedBox(height: 8),
+                // Filter pills row
+                SizedBox(
+                  height: 38,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    scrollDirection: Axis.horizontal,
+                    itemCount: _filters.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, index) {
+                      final filter = _filters[index];
+                      final isSelected = filter == _selectedFilter;
+                      return GestureDetector(
+                        onTap: () => setState(() => _selectedFilter = filter),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppColors.primary : AppColors.tileBackground,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Center(
+                            child: Text(
+                              filter,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                color: isSelected ? Colors.white : AppColors.textSecondary,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    );
-                  },
+                      );
+                    },
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              // Trips List
-              Expanded(
-                child: trips.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                const SizedBox(height: 14),
+                // Trips List
+                Expanded(
+                  child: trips.isEmpty
+                      ? ListView(
                           children: [
-                            Icon(Icons.route_rounded, size: 64, color: Colors.grey.shade300),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'No trips in this period',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textSecondary,
+                            SizedBox(height: MediaQuery.of(context).size.height * 0.2),
+                            Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.route_rounded, size: 64, color: Colors.grey.shade300),
+                                  const SizedBox(height: 12),
+                                  const Text(
+                                    'No trips recorded yet',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  const Text(
+                                    'Start live tracking to record trips automatically',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: AppColors.textMuted,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          itemCount: trips.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final trip = trips[index];
+                            return _tripCard(trip);
+                          },
                         ),
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        itemCount: trips.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          final trip = trips[index];
-                          return _tripCard(trip);
-                        },
-                      ),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -137,72 +161,111 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
   }
 
   Widget _tripCard(TripModel trip) {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => TripDetailsScreen(trip: trip)),
+    return Dismissible(
+      key: Key(trip.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: AppColors.danger,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Icon(Icons.delete_outline_rounded, color: Colors.white, size: 26),
+      ),
+      confirmDismiss: (direction) async {
+        return await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Delete Trip?'),
+            content: const Text('Are you sure you want to permanently delete this trip from history?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
         );
       },
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border, width: 1.0),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Route preview thumbnail
-            TripRouteThumbnail(points: trip.points, size: 54),
-            const SizedBox(width: 14),
-            // Trip metadata
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    trip.title,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    trip.formattedDate,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${trip.formattedDistance} • ${trip.formattedDuration}',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
+      onDismissed: (_) {
+        trackingService.deleteTrip(trip.id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Trip deleted from history')),
+        );
+      },
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => TripDetailsScreen(trip: trip)),
+          );
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.border, width: 1.0),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
               ),
-            ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: AppColors.textMuted,
-              size: 24,
-            ),
-          ],
+            ],
+          ),
+          child: Row(
+            children: [
+              // Route preview thumbnail
+              TripRouteThumbnail(points: trip.points, size: 54),
+              const SizedBox(width: 14),
+              // Trip metadata
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      trip.title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      trip.formattedDate,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${trip.formattedDistance} • ${trip.formattedDuration}',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textMuted,
+                size: 24,
+              ),
+            ],
+          ),
         ),
       ),
     );

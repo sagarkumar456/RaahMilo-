@@ -26,8 +26,9 @@ void main() async {
     debugPrint('Firebase initialization notice: $e');
   }
 
-  // Restore active tracking session if app was cleared from recents or phone rebooted
+  // Restore history and active tracking session if app was cleared from recents or phone rebooted
   try {
+    await trackingService.loadHistory();
     await trackingService.restoreActiveSession();
   } catch (_) {}
 

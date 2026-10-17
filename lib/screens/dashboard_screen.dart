@@ -5,7 +5,9 @@ import '../models/shared_device_model.dart';
 import '../services/share_service.dart';
 import '../services/tracking_service.dart';
 import '../widgets/pulse_indicator.dart';
+import 'package:geolocator/geolocator.dart';
 import 'geofence_screen.dart';
+import 'location_disabled_screen.dart';
 import 'premium_screen.dart';
 import 'share_screen.dart';
 import 'shared_device_map_screen.dart';
@@ -128,6 +130,19 @@ class DashboardScreen extends StatelessWidget {
                                     );
                                   }
                                 } else {
+                                  final isEnabled = await Geolocator.isLocationServiceEnabled();
+                                  if (!isEnabled) {
+                                    if (context.mounted) {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const LocationDisabledScreen(),
+                                          fullscreenDialog: true,
+                                        ),
+                                      );
+                                    }
+                                    return;
+                                  }
                                   await trackingService.start();
                                   if (context.mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
@@ -147,9 +162,20 @@ class DashboardScreen extends StatelessWidget {
                                 }
                               } catch (e) {
                                 if (context.mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('$e')),
-                                  );
+                                  final isEnabled = await Geolocator.isLocationServiceEnabled();
+                                  if (!isEnabled) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const LocationDisabledScreen(),
+                                        fullscreenDialog: true,
+                                      ),
+                                    );
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('$e')),
+                                    );
+                                  }
                                 }
                               }
                             },

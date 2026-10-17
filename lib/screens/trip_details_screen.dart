@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
 import '../models/trip_model.dart';
+import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
 import 'share_screen.dart';
 
@@ -144,11 +145,45 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.share_outlined),
+            tooltip: 'Share Trip',
             onPressed: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => ShareScreen(tripId: widget.trip.id)),
               );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded),
+            tooltip: 'Delete Trip',
+            onPressed: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Delete Trip?'),
+                  content: const Text('Are you sure you want to permanently delete this trip from history?'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx, false),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Delete'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirm == true && mounted) {
+                await trackingService.deleteTrip(widget.trip.id);
+                if (mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Trip deleted from history')),
+                  );
+                }
+              }
             },
           ),
         ],

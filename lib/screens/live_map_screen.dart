@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
 import '../services/geocoding_service.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
 import '../widgets/pulse_indicator.dart';
+import 'location_disabled_screen.dart';
 import 'tracking_details_sheet.dart';
 
 class LiveMapScreen extends StatefulWidget {
@@ -18,13 +21,36 @@ class LiveMapScreen extends StatefulWidget {
 class _LiveMapScreenState extends State<LiveMapScreen> {
   final MapController _mapController = MapController();
   bool _isSatellite = false;
+  bool _isLocationEnabled = true;
+  StreamSubscription<ServiceStatus>? _serviceStatusSub;
 
   static const ll.LatLng _defaultCoord = ll.LatLng(20.5937, 78.9629); // India center fallback until GPS is acquired
 
   @override
   void initState() {
     super.initState();
+    _checkLocationServiceStatus();
     _initDeviceLocation();
+  }
+
+  @override
+  void dispose() {
+    _serviceStatusSub?.cancel();
+    super.dispose();
+  }
+
+  void _checkLocationServiceStatus() {
+    Geolocator.isLocationServiceEnabled().then((enabled) {
+      if (mounted) setState(() => _isLocationEnabled = enabled);
+    });
+    _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
+      if (mounted) {
+        setState(() => _isLocationEnabled = status == ServiceStatus.enabled);
+        if (status == ServiceStatus.enabled) {
+          _initDeviceLocation();
+        }
+      }
+    });
   }
 
   Future<void> _initDeviceLocation() async {
@@ -52,6 +78,19 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   }
 
   Future<void> _recenter() async {
+    final enabled = await Geolocator.isLocationServiceEnabled();
+    if (!enabled) {
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const LocationDisabledScreen(),
+            fullscreenDialog: true,
+          ),
+        );
+      }
+      return;
+    }
     var pos = trackingService.current;
     if (pos == null) {
       pos = await trackingService.initCurrentLocation();
@@ -200,6 +239,60 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                   ],
                 ),
               ),
+
+              // Location Off Top Banner
+              if (!_isLocationEnabled)
+                Positioned(
+                  top: 14,
+                  left: 16,
+                  right: 70, // Leave room for zoom buttons on right
+                  child: GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LocationDisabledScreen(),
+                          fullscreenDialog: true,
+                        ),
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFE53935), Color(0xFFFF5252)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFE53935).withValues(alpha: 0.35),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.location_off_rounded, color: Colors.white, size: 20),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Location is turned off • Tap to Enable',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ),
+                          Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 12),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
 
               // 3. Floating Bottom Card matching Screen 7
               Positioned(
@@ -373,6 +466,19 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                                   );
                                 }
                               } else {
+                                final isEnabled = await Geolocator.isLocationServiceEnabled();
+                                if (!isEnabled) {
+                                  if (context.mounted) {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const LocationDisabledScreen(),
+                                        fullscreenDialog: true,
+                                      ),
+                                    );
+                                  }
+                                  return;
+                                }
                                 await trackingService.start();
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -392,9 +498,20 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                               }
                             } catch (e) {
                               if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('$e')),
-                                );
+                                final isEnabled = await Geolocator.isLocationServiceEnabled();
+                                if (!isEnabled) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const LocationDisabledScreen(),
+                                      fullscreenDialog: true,
+                                    ),
+                                  );
+                                } else {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('$e')),
+                                  );
+                                }
                               }
                             }
                           },

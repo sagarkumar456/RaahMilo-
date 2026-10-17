@@ -27,15 +27,37 @@ class TripPoint {
     'at': Timestamp.fromDate(timestamp),
   };
 
+  Map<String, dynamic> toJson() => {
+    'lat': latitude,
+    'lng': longitude,
+    'speed': speed,
+    'accuracy': accuracy,
+    'timestamp': timestamp.toIso8601String(),
+  };
+
   factory TripPoint.fromMap(Map<String, dynamic> map) {
+    DateTime ts;
+    final atVal = map['at'] ?? map['timestamp'];
+    if (atVal is Timestamp) {
+      ts = atVal.toDate();
+    } else if (atVal is String) {
+      ts = DateTime.tryParse(atVal) ?? DateTime.now();
+    } else if (atVal is int) {
+      ts = DateTime.fromMillisecondsSinceEpoch(atVal);
+    } else {
+      ts = DateTime.now();
+    }
+
     return TripPoint(
       latitude: (map['lat'] as num?)?.toDouble() ?? 0.0,
       longitude: (map['lng'] as num?)?.toDouble() ?? 0.0,
       speed: (map['speed'] as num?)?.toDouble() ?? 0.0,
       accuracy: (map['accuracy'] as num?)?.toDouble() ?? 0.0,
-      timestamp: (map['at'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      timestamp: ts,
     );
   }
+
+  factory TripPoint.fromJson(Map<String, dynamic> json) => TripPoint.fromMap(json);
 }
 
 class TripModel {
@@ -92,17 +114,92 @@ class TripModel {
     return (distanceMeters / 1000.0) / diffHours;
   }
 
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'title': title,
+    'ownerId': ownerId,
+    'viewerIds': viewerIds,
+    'startedAt': startedAt.toIso8601String(),
+    'endedAt': endedAt?.toIso8601String(),
+    'distanceMeters': distanceMeters,
+    'active': isActive,
+    'points': points.map((p) => p.toJson()).toList(),
+  };
+
+  factory TripModel.fromJson(Map<String, dynamic> json) {
+    final rawPoints = json['points'] as List<dynamic>? ?? [];
+    return TripModel(
+      id: json['id'] as String? ?? '',
+      title: json['title'] as String? ?? 'Trip to Destination',
+      ownerId: json['ownerId'] as String? ?? '',
+      viewerIds: List<String>.from(json['viewerIds'] ?? []),
+      startedAt: json['startedAt'] != null
+          ? DateTime.tryParse(json['startedAt'].toString()) ?? DateTime.now()
+          : DateTime.now(),
+      endedAt: json['endedAt'] != null
+          ? DateTime.tryParse(json['endedAt'].toString())
+          : null,
+      distanceMeters: (json['distanceMeters'] as num?)?.toDouble() ?? 0.0,
+      isActive: json['active'] as bool? ?? (json['isActive'] as bool? ?? false),
+      points: rawPoints
+          .map((p) => TripPoint.fromJson(p as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
   factory TripModel.fromFirestore(String id, Map<String, dynamic> data, [List<TripPoint> points = const []]) {
+    DateTime started;
+    final sVal = data['startedAt'];
+    if (sVal is Timestamp) {
+      started = sVal.toDate();
+    } else if (sVal is String) {
+      started = DateTime.tryParse(sVal) ?? DateTime.now();
+    } else {
+      started = DateTime.now();
+    }
+
+    DateTime? ended;
+    final eVal = data['endedAt'];
+    if (eVal is Timestamp) {
+      ended = eVal.toDate();
+    } else if (eVal is String) {
+      ended = DateTime.tryParse(eVal);
+    }
+
     return TripModel(
       id: id,
       title: data['title'] as String? ?? 'Trip to Destination',
       ownerId: data['ownerId'] as String? ?? '',
       viewerIds: List<String>.from(data['viewerIds'] ?? []),
-      startedAt: (data['startedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      endedAt: (data['endedAt'] as Timestamp?)?.toDate(),
+      startedAt: started,
+      endedAt: ended,
       distanceMeters: (data['distanceMeters'] as num?)?.toDouble() ?? 0.0,
       isActive: data['active'] as bool? ?? false,
       points: points,
+    );
+  }
+
+  TripModel copyWith({
+    String? id,
+    String? title,
+    String? ownerId,
+    List<String>? viewerIds,
+    DateTime? startedAt,
+    DateTime? endedAt,
+    double? distanceMeters,
+    bool? isActive,
+    List<TripPoint>? points,
+  }) {
+    return TripModel(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      ownerId: ownerId ?? this.ownerId,
+      viewerIds: viewerIds ?? this.viewerIds,
+      startedAt: startedAt ?? this.startedAt,
+      endedAt: endedAt ?? this.endedAt,
+      distanceMeters: distanceMeters ?? this.distanceMeters,
+      isActive: isActive ?? this.isActive,
+      points: points ?? this.points,
     );
   }
 }
