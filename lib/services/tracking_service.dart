@@ -22,6 +22,11 @@ class TrackingService extends ChangeNotifier {
   TrackingService._internal() {
     loadHistory();
     restoreActiveSession();
+    FirebaseAuth.instance.authStateChanges().listen((user) {
+      if (user != null) {
+        syncFirestoreHistory();
+      }
+    });
   }
 
   StreamSubscription<Position>? _positionSubscription;
