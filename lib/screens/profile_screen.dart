@@ -221,17 +221,17 @@ class ProfileScreen extends StatelessWidget {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: AppColors.dangerLight,
+                    color: AppColors.tileBackground,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.logout_rounded, color: AppColors.danger, size: 22),
+                  child: const Icon(Icons.logout_rounded, color: AppColors.navyDark, size: 22),
                 ),
                 title: const Text(
                   'Logout',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.danger,
+                    color: AppColors.navyDark,
                   ),
                 ),
                 onTap: () async {
@@ -248,12 +248,191 @@ class ProfileScreen extends StatelessWidget {
                   }
                 },
               ),
-              const SizedBox(height: 24),
+
+              const SizedBox(height: 8),
+
+              // Delete Account Button (Required by Google Play Policy & User Safety)
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFEBEE),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.delete_forever_rounded, color: Color(0xFFD32F2F), size: 22),
+                ),
+                title: const Text(
+                  'Delete Account',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFFD32F2F),
+                  ),
+                ),
+                subtitle: const Text(
+                  'Permanently remove account & all tracking history',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                onTap: () => _showDeleteConfirmation(context),
+              ),
+
+              const SizedBox(height: 32),
             ],
           ),
         );
       },
     );
+  }
+
+  void _showDeleteConfirmation(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEBEE),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFD32F2F), size: 26),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Delete Account?',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.navyDark,
+                ),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Are you sure you want to permanently delete your account?\n\n'
+          '• All your saved trips and route history will be erased.\n'
+          '• Your profile and live device sharing connections will be deleted.\n'
+          '• This action cannot be undone.',
+          style: TextStyle(fontSize: 14, color: AppColors.textPrimary, height: 1.45),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: AppColors.textSecondary, fontWeight: FontWeight.w600),
+            ),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFD32F2F),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            icon: const Icon(Icons.delete_forever_rounded, size: 18),
+            label: const Text(
+              'Delete Forever',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            onPressed: () {
+              Navigator.pop(dialogCtx);
+              _performAccountDeletion(context);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _performAccountDeletion(BuildContext context) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      useRootNavigator: true,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.12),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(strokeWidth: 3, color: Color(0xFFD32F2F)),
+                SizedBox(width: 18),
+                Text(
+                  'Deleting account...',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.navyDark),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    try {
+      await trackingService.clearAllUserData();
+      await authService.deleteAccount();
+
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (route) => false,
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Row(
+              children: [
+                Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Expanded(child: Text('Your account and data have been permanently deleted.')),
+              ],
+            ),
+            backgroundColor: Color(0xFF1E293B),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        final errStr = e.toString();
+        final message = errStr.contains('requires-recent-login')
+            ? 'For security, please log out and log in again before deleting your account.'
+            : 'Failed to delete account: $e';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+      }
+    }
   }
 
   Widget _profileMenuTile({

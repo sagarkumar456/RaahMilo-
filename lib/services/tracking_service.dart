@@ -640,6 +640,28 @@ class TrackingService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> clearAllUserData() async {
+    if (_active) {
+      await stop();
+    }
+    _points.clear();
+    _tripPoints.clear();
+    _historyTrips.clear();
+    _meters = 0.0;
+    _tripId = null;
+    _began = null;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('saved_history_trips');
+      await prefs.remove('is_tracking_active');
+      await prefs.remove('active_trip_id');
+      await prefs.remove('active_trip_began');
+      await prefs.remove('active_trip_meters');
+      await prefs.remove('active_trip_points');
+    } catch (_) {}
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _timer?.cancel();

@@ -664,15 +664,17 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                                 style: TextStyle(color: AppColors.textMuted),
                               ),
                             ],
-                            Text(
-                              isActive ? 'Tracking Active' : 'Stationary',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: isActive ? AppColors.success : AppColors.textSecondary,
+                            Expanded(
+                              child: Text(
+                                isActive ? 'Tracking Active' : 'Stationary',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isActive ? AppColors.success : AppColors.textSecondary,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const Spacer(),
                             const Text(
                               'Details ›',
                               style: TextStyle(

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -109,6 +110,43 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> deleteAccount() async {
+    final user = currentUser;
+    final userUid = uid;
+
+    try {
+      if (userUid.isNotEmpty && !userUid.startsWith('demo_')) {
+        // Delete user document
+        await FirebaseFirestore.instance.collection('users').doc(userUid).delete();
+
+        // Delete user trips
+        final trips = await FirebaseFirestore.instance
+            .collection('trips')
+            .where('ownerId', isEqualTo: userUid)
+            .get();
+        for (final doc in trips.docs) {
+          await doc.reference.delete();
+        }
+
+        // Delete user device shares
+        final shares = await FirebaseFirestore.instance
+            .collection('device_shares')
+            .where('ownerId', isEqualTo: userUid)
+            .get();
+        for (final doc in shares.docs) {
+          await doc.reference.delete();
+        }
+      }
+    } catch (_) {}
+
+    if (user != null) {
+      await user.delete();
+    }
+
+    _isDemoLoggedIn = false;
+    notifyListeners();
+  }
+
   void loginAsDemo() {
     _isDemoLoggedIn = true;
     notifyListeners();
@@ -116,3 +154,4 @@ class AuthService extends ChangeNotifier {
 }
 
 final authService = AuthService();
+
