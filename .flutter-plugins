@@ -1,0 +1,27 @@
+# This is a generated file; do not edit or check into version control.
+cloud_firestore=/Users/sagarkumar/.pub-cache/hosted/pub.dev/cloud_firestore-6.10.0/
+cloud_firestore_web=/Users/sagarkumar/.pub-cache/hosted/pub.dev/cloud_firestore_web-5.7.3/
+firebase_auth=/Users/sagarkumar/.pub-cache/hosted/pub.dev/firebase_auth-6.7.0/
+firebase_auth_web=/Users/sagarkumar/.pub-cache/hosted/pub.dev/firebase_auth_web-6.3.0/
+firebase_core=/Users/sagarkumar/.pub-cache/hosted/pub.dev/firebase_core-4.15.0/
+firebase_core_web=/Users/sagarkumar/.pub-cache/hosted/pub.dev/firebase_core_web-3.12.0/
+flutter_plugin_android_lifecycle=/Users/sagarkumar/.pub-cache/hosted/pub.dev/flutter_plugin_android_lifecycle-2.0.31/
+geolocator=/Users/sagarkumar/.pub-cache/hosted/pub.dev/geolocator-14.0.2/
+geolocator_android=/Users/sagarkumar/.pub-cache/hosted/pub.dev/geolocator_android-5.1.1+1/
+geolocator_apple=/Users/sagarkumar/.pub-cache/hosted/pub.dev/geolocator_apple-2.3.15/
+geolocator_linux=/Users/sagarkumar/.pub-cache/hosted/pub.dev/geolocator_linux-0.2.4/
+geolocator_web=/Users/sagarkumar/.pub-cache/hosted/pub.dev/geolocator_web-4.1.4/
+geolocator_windows=/Users/sagarkumar/.pub-cache/hosted/pub.dev/geolocator_windows-0.2.5/
+google_maps_flutter=/Users/sagarkumar/.pub-cache/hosted/pub.dev/google_maps_flutter-2.14.0/
+google_maps_flutter_android=/Users/sagarkumar/.pub-cache/hosted/pub.dev/google_maps_flutter_android-2.18.3/
+google_maps_flutter_ios=/Users/sagarkumar/.pub-cache/hosted/pub.dev/google_maps_flutter_ios-2.15.5/
+google_maps_flutter_web=/Users/sagarkumar/.pub-cache/hosted/pub.dev/google_maps_flutter_web-0.5.14+3/
+package_info_plus=/Users/sagarkumar/.pub-cache/hosted/pub.dev/package_info_plus-9.0.1/
+path_provider_linux=/Users/sagarkumar/.pub-cache/hosted/pub.dev/path_provider_linux-2.2.1/
+path_provider_windows=/Users/sagarkumar/.pub-cache/hosted/pub.dev/path_provider_windows-2.3.0/
+shared_preferences=/Users/sagarkumar/.pub-cache/hosted/pub.dev/shared_preferences-2.5.3/
+shared_preferences_android=/Users/sagarkumar/.pub-cache/hosted/pub.dev/shared_preferences_android-2.4.13/
+shared_preferences_foundation=/Users/sagarkumar/.pub-cache/hosted/pub.dev/shared_preferences_foundation-2.5.4/
+shared_preferences_linux=/Users/sagarkumar/.pub-cache/hosted/pub.dev/shared_preferences_linux-2.4.1/
+shared_preferences_web=/Users/sagarkumar/.pub-cache/hosted/pub.dev/shared_preferences_web-2.4.3/
+shared_preferences_windows=/Users/sagarkumar/.pub-cache/hosted/pub.dev/shared_preferences_windows-2.4.1/

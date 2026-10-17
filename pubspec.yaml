@@ -1,0 +1,18 @@
+name: trackmyphone
+publish_to: none
+description: Consent-based GPS tracker with email sign-in and trip sharing.
+version: 1.0.0+1
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  firebase_core: ^4.0.0
+  firebase_auth: ^6.0.0
+  cloud_firestore: ^6.0.0
+  geolocator: ^14.0.0
+  google_maps_flutter: ^2.12.0
+  intl: ^0.20.0
+  shared_preferences: ^2.5.0
+flutter:
+  uses-material-design: true
