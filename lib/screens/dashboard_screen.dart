@@ -1,10 +1,15 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../core/app_colors.dart';
+import '../models/shared_device_model.dart';
+import '../services/share_service.dart';
 import '../services/tracking_service.dart';
 import '../widgets/pulse_indicator.dart';
 import 'geofence_screen.dart';
 import 'premium_screen.dart';
 import 'share_screen.dart';
+import 'shared_device_map_screen.dart';
+import 'shared_user_history_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   final ValueChanged<int> onNavigateTab;
@@ -107,8 +112,38 @@ class DashboardScreen extends StatelessWidget {
                               try {
                                 if (isActive) {
                                   await trackingService.stop();
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Row(
+                                          children: [
+                                            Icon(Icons.stop_circle_rounded, color: Colors.white, size: 20),
+                                            SizedBox(width: 8),
+                                            Text('Live tracking stopped'),
+                                          ],
+                                        ),
+                                        backgroundColor: AppColors.danger,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
                                 } else {
                                   await trackingService.start();
+                                  if (context.mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Row(
+                                          children: [
+                                            Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 20),
+                                            SizedBox(width: 8),
+                                            Text('Live tracking started'),
+                                          ],
+                                        ),
+                                        backgroundColor: AppColors.success,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
                                 }
                               } catch (e) {
                                 if (context.mounted) {
@@ -156,14 +191,14 @@ class DashboardScreen extends StatelessWidget {
               crossAxisCount: 2,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.25,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 14,
+              childAspectRatio: 1.12,
               children: [
                 _dashboardGridCard(
                   icon: Icons.navigation_rounded,
-                  iconColor: const Color(0xFF0866FF),
-                  bgColor: const Color(0xFFE8F1FF),
+                  iconColor: AppColors.primary,
+                  bgColor: AppColors.primaryLight,
                   title: 'Live Tracking',
                   subtitle: 'View on map',
                   onTap: () => onNavigateTab(1), // Map tab
@@ -204,6 +239,11 @@ class DashboardScreen extends StatelessWidget {
                 ),
               ],
             ),
+
+            const SizedBox(height: 24),
+
+            // Live Shared Devices Section (User A sharing with User B)
+            _buildSharedWithMeSection(context),
 
             const SizedBox(height: 24),
 
@@ -323,7 +363,7 @@ class DashboardScreen extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
@@ -341,25 +381,25 @@ class DashboardScreen extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 50,
-              height: 50,
+              width: 46,
+              height: 46,
               decoration: BoxDecoration(
                 color: bgColor,
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(icon, color: iconColor, size: 26),
+              child: Icon(icon, color: iconColor, size: 24),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: FontWeight.bold,
                 color: AppColors.textPrimary,
               ),
             ),
-            const SizedBox(height: 3),
+            const SizedBox(height: 2),
             Text(
               subtitle,
               textAlign: TextAlign.center,
@@ -367,6 +407,360 @@ class DashboardScreen extends StatelessWidget {
                 fontSize: 12,
                 color: AppColors.textSecondary,
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSharedWithMeSection(BuildContext context) {
+    final currentEmail = FirebaseAuth.instance.currentUser?.email;
+
+    return StreamBuilder<List<SharedDeviceModel>>(
+      stream: shareService.getSharedWithMeStream(),
+      builder: (context, snapshot) {
+        final devices = snapshot.data ?? [];
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.share_location_rounded,
+                    color: Color(0xFF10B981),
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const Text(
+                  'Shared With You',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.navyDark,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (devices.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.success,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${devices.length} Live',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ShareScreen()),
+                    );
+                  },
+                  child: const Text('Share Mine'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (devices.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.tileBackground,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.person_pin_circle_outlined,
+                        color: AppColors.textSecondary,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'No live devices shared yet',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            currentEmail != null && currentEmail.isNotEmpty
+                                ? 'Friends can share to: $currentEmail'
+                                : 'Sign in to see locations shared with you',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              ListView.separated(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: devices.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (context, index) {
+                  final dev = devices[index];
+                  return _sharedDeviceCard(context, dev);
+                },
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _sharedDeviceCard(BuildContext context, SharedDeviceModel dev) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => SharedUserHistoryScreen(sharedDevice: dev),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: dev.isActive ? AppColors.primary.withValues(alpha: 0.35) : AppColors.border,
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppColors.primaryLight,
+                  child: Text(
+                    dev.ownerName.isNotEmpty ? dev.ownerName[0].toUpperCase() : 'U',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              dev.ownerName,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (dev.isActive) ...[
+                            const PulseIndicator(size: 8, color: AppColors.success),
+                            const SizedBox(width: 4),
+                            const Text(
+                              'Live',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.success,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        dev.ownerEmail,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.textMuted,
+                  size: 22,
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            // Address chip with speed badge
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.tileBackground,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.location_on_rounded, size: 16, color: AppColors.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      dev.address,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${dev.speedKmh.toStringAsFixed(0)} km/h',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Action Buttons: Location History (Primary) + Live Map
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SharedUserHistoryScreen(sharedDevice: dev),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.history_rounded, size: 18),
+                    label: const Text(
+                      'Location History',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(40),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      elevation: 0,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SharedDeviceMapScreen(initialDevice: dev),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.map_rounded, size: 16, color: AppColors.primary),
+                    label: const Text(
+                      'Live Map',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryDark,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(40),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      side: const BorderSide(color: AppColors.primary, width: 1.2),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

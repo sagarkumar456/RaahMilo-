@@ -93,20 +93,23 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                         ),
                         child: Center(
                           child: Container(
-                            width: 88,
-                            height: 88,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: LinearGradient(
-                                colors: [Color(0xFF2684FF), Color(0xFF0052CC)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.location_on_rounded,
-                              size: 48,
+                            width: 96,
+                            height: 96,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
                               color: Colors.white,
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.15),
+                                  blurRadius: 16,
+                                  offset: const Offset(0, 6),
+                                ),
+                              ],
+                            ),
+                            child: Image.asset(
+                              'assets/images/logo_pin.png',
+                              fit: BoxFit.contain,
                             ),
                           ),
                         ),
@@ -116,7 +119,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                 ),
                 const SizedBox(height: 28),
                 const Text(
-                  'TrackMyPhone',
+                  'RaahMilo',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 32,

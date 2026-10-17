@@ -6,6 +6,7 @@ enum NotificationType {
   speedAlert,
   lowBattery,
   trackingStarted,
+  trackingStopped,
   general,
 }
 
@@ -40,6 +41,8 @@ class AppNotification {
         return Icons.battery_alert_rounded;
       case NotificationType.trackingStarted:
         return Icons.play_circle_fill_rounded;
+      case NotificationType.trackingStopped:
+        return Icons.stop_circle_rounded;
       case NotificationType.general:
         return Icons.notifications_rounded;
     }
@@ -57,8 +60,10 @@ class AppNotification {
         return const Color(0xFFF59E0B); // Amber
       case NotificationType.trackingStarted:
         return const Color(0xFF10B981); // Green
+      case NotificationType.trackingStopped:
+        return const Color(0xFFEF4444); // Red
       case NotificationType.general:
-        return const Color(0xFF0866FF); // Blue
+        return const Color(0xFF10B981); // Green
     }
   }
 

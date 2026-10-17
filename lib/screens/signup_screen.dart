@@ -95,7 +95,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Image.asset(
+                  'assets/images/logo_horizontal.png',
+                  height: 32,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(height: 16),
               const Text(
                 'Create Account',
                 style: TextStyle(
@@ -106,7 +114,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               ),
               const SizedBox(height: 6),
               const Text(
-                'Start tracking with TrackMyPhone',
+                'Start tracking with RaahMilo',
                 style: TextStyle(
                   fontSize: 15,
                   color: AppColors.textSecondary,

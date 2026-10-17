@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
+import '../services/geocoding_service.dart';
 import '../services/tracking_service.dart';
+import '../utils/path_arrows.dart';
 import '../widgets/pulse_indicator.dart';
 import 'tracking_details_sheet.dart';
 
@@ -17,17 +19,27 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   final MapController _mapController = MapController();
   bool _isSatellite = false;
 
-  static const ll.LatLng _defaultCoord = ll.LatLng(28.6139, 77.2090);
+  static const ll.LatLng _defaultCoord = ll.LatLng(20.5937, 78.9629); // India center fallback until GPS is acquired
 
-  // Sample realistic route points for fallback preview
-  final List<ll.LatLng> _sampleRoute = const [
-    ll.LatLng(28.6250, 77.2050),
-    ll.LatLng(28.6210, 77.2070),
-    ll.LatLng(28.6170, 77.2085),
-    ll.LatLng(28.6139, 77.2090),
-    ll.LatLng(28.6100, 77.2120),
-    ll.LatLng(28.6050, 77.2150),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _initDeviceLocation();
+  }
+
+  Future<void> _initDeviceLocation() async {
+    final pos = trackingService.current;
+    if (pos != null) {
+      geocodingService.updateFromPosition(pos.latitude, pos.longitude);
+      _mapController.move(ll.LatLng(pos.latitude, pos.longitude), 16.0);
+    } else {
+      final p = await trackingService.initCurrentLocation();
+      if (p != null && mounted) {
+        geocodingService.updateFromPosition(p.latitude, p.longitude);
+        _mapController.move(ll.LatLng(p.latitude, p.longitude), 16.0);
+      }
+    }
+  }
 
   void _zoomIn() {
     final currentZoom = _mapController.camera.zoom;
@@ -39,10 +51,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     _mapController.move(_mapController.camera.center, currentZoom - 1);
   }
 
-  void _recenter() {
-    final pos = trackingService.current;
-    final target = pos != null ? ll.LatLng(pos.latitude, pos.longitude) : _defaultCoord;
-    _mapController.move(target, 16.0);
+  Future<void> _recenter() async {
+    var pos = trackingService.current;
+    if (pos == null) {
+      pos = await trackingService.initCurrentLocation();
+    }
+    if (pos != null) {
+      _mapController.move(ll.LatLng(pos.latitude, pos.longitude), 16.5);
+    }
   }
 
   void _toggleMapLayer() {
@@ -52,18 +68,20 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: trackingService,
+      animation: Listenable.merge([trackingService, geocodingService]),
       builder: (context, _) {
         final pos = trackingService.current;
         final currentCoord = pos != null ? ll.LatLng(pos.latitude, pos.longitude) : _defaultCoord;
         final isActive = trackingService.active;
 
-        final routePoints = trackingService.points.isNotEmpty
-            ? trackingService.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList()
-            : _sampleRoute;
+        final hasRoute = trackingService.points.length >= 2;
+        final routePoints = trackingService.points
+            .map((p) => ll.LatLng(p.latitude, p.longitude))
+            .toList();
 
-        final startPoint = routePoints.first;
-        final speedKmh = pos != null ? (pos.speed.clamp(0, 999) * 3.6).toStringAsFixed(0) : '52';
+        final speedKmh = (pos != null && isActive)
+            ? (pos.speed.clamp(0, 999) * 3.6).toStringAsFixed(0)
+            : '0';
 
         final tileUrl = _isSatellite
             ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
@@ -80,19 +98,19 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               ),
               IconButton(
                 icon: const Icon(Icons.my_location_rounded),
-                tooltip: 'Recenter on Vehicle',
+                tooltip: 'Recenter on My Location',
                 onPressed: _recenter,
               ),
             ],
           ),
           body: Stack(
             children: [
-              // 1. OpenStreetMap Layer (100% Free, Zero API Key required, Real Streets & Buildings)
+              // 1. OpenStreetMap Layer
               FlutterMap(
                 mapController: _mapController,
                 options: MapOptions(
                   initialCenter: currentCoord,
-                  initialZoom: 15.5,
+                  initialZoom: pos != null ? 16.0 : 5.0,
                   minZoom: 3.0,
                   maxZoom: 19.0,
                 ),
@@ -102,60 +120,69 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                     userAgentPackageName: 'com.trackmyphone.gps',
                   ),
 
-                  // Route Polyline
-                  PolylineLayer(
-                    polylines: [
-                      Polyline(
-                        points: routePoints,
-                        strokeWidth: 5.0,
-                        color: AppColors.primary,
-                      ),
-                    ],
-                  ),
+                  // Route Polyline (ONLY if user has actually moved/recorded points)
+                  if (hasRoute)
+                    PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: routePoints,
+                          strokeWidth: 5.0,
+                          color: AppColors.primary,
+                        ),
+                      ],
+                    ),
+
+                  // Directional Arrow Badges along the path
+                  if (hasRoute)
+                    MarkerLayer(
+                      markers: buildDirectionalArrowMarkers(routePoints),
+                    ),
 
                   // Markers Layer: Start Point + Moving Vehicle
                   MarkerLayer(
                     markers: [
-                      // Start Marker (Blue Pin)
-                      Marker(
-                        point: startPoint,
-                        width: 40,
-                        height: 40,
-                        alignment: Alignment.topCenter,
-                        child: const Icon(
-                          Icons.location_on_rounded,
-                          color: Color(0xFF0052CC),
-                          size: 38,
-                        ),
-                      ),
-                      // Vehicle / Current Position Marker (Red Car Badge)
-                      Marker(
-                        point: currentCoord,
-                        width: 50,
-                        height: 50,
-                        alignment: Alignment.center,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.danger,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white, width: 3),
-                            boxShadow: [
-                              BoxShadow(
-                                color: AppColors.danger.withValues(alpha: 0.4),
-                                blurRadius: 10,
-                                spreadRadius: 2,
-                              ),
-                            ],
+                      // Start Marker (Green Pin) - only if points exist
+                      if (trackingService.points.isNotEmpty)
+                        Marker(
+                          point: routePoints.first,
+                          width: 40,
+                          height: 40,
+                          alignment: Alignment.topCenter,
+                          child: const Icon(
+                            Icons.location_on_rounded,
+                            color: AppColors.primary,
+                            size: 38,
                           ),
-                          child: const Center(
-                            child: Icon(
-                              Icons.directions_car_filled_rounded,
-                              color: Colors.white,
-                              size: 24,
+                        ),
+                      // Vehicle / Current Position Marker
+                      if (pos != null)
+                        Marker(
+                          point: currentCoord,
+                          width: 50,
+                          height: 50,
+                          alignment: Alignment.center,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 3),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: AppColors.primary.withValues(alpha: 0.4),
+                                  blurRadius: 10,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.my_location_rounded,
+                                color: Colors.white,
+                                size: 24,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ],
                   ),
                 ],
@@ -238,75 +265,130 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        // Coordinates & Last Update
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Latitude',
-                                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+                        // Real-time Address Card
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppColors.tileBackground,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.border, width: 0.8),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  pos != null ? pos.latitude.toStringAsFixed(4) : '28.6139',
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
+                                child: const Icon(
+                                  Icons.location_on_rounded,
+                                  color: AppColors.primary,
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      geocodingService.fullAddress.isNotEmpty
+                                          ? geocodingService.fullAddress
+                                          : (geocodingService.currentTitle != 'Locating address...'
+                                              ? '${geocodingService.currentTitle}, ${geocodingService.currentSubtitle}'
+                                              : (pos != null ? 'Fetching address details...' : 'Detecting GPS location...')),
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.textPrimary,
+                                        height: 1.35,
+                                      ),
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        if (pos != null) ...[
+                                          Text(
+                                            '${pos.latitude.toStringAsFixed(4)}°, ${pos.longitude.toStringAsFixed(4)}°',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              color: AppColors.textMuted,
+                                              fontFamily: 'monospace',
+                                            ),
+                                          ),
+                                          const Text(
+                                            ' • ',
+                                            style: TextStyle(color: AppColors.textMuted),
+                                          ),
+                                        ],
+                                        Text(
+                                          isActive ? 'Tracking Active' : 'Stationary',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: isActive ? AppColors.success : AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (geocodingService.isLoading)
+                                const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.primary,
                                   ),
                                 ),
-                              ],
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Longitude',
-                                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  pos != null ? pos.longitude.toStringAsFixed(4) : '77.2090',
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  'Last Update',
-                                  style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  'Just now',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.textPrimary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 14),
-                        // Big Red Stop Tracking Button
+                        // Big Red / Green Stop / Start Tracking Button
                         ElevatedButton(
                           onPressed: () async {
                             try {
                               if (isActive) {
                                 await trackingService.stop();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Row(
+                                        children: [
+                                          Icon(Icons.stop_circle_rounded, color: Colors.white, size: 20),
+                                          SizedBox(width: 8),
+                                          Text('Live tracking stopped'),
+                                        ],
+                                      ),
+                                      backgroundColor: AppColors.danger,
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
                               } else {
                                 await trackingService.start();
+                                if (context.mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Row(
+                                        children: [
+                                          Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 20),
+                                          SizedBox(width: 8),
+                                          Text('Live tracking started'),
+                                        ],
+                                      ),
+                                      backgroundColor: AppColors.success,
+                                      duration: Duration(seconds: 2),
+                                    ),
+                                  );
+                                }
                               }
                             } catch (e) {
                               if (context.mounted) {

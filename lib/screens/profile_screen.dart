@@ -178,7 +178,7 @@ class ProfileScreen extends StatelessWidget {
                 onTap: () {
                   showAboutDialog(
                     context: context,
-                    applicationName: 'TrackMyPhone',
+                    applicationName: 'RaahMilo',
                     applicationVersion: '1.0.0',
                     children: const [
                       Text('Consent-based GPS tracking app designed for vehicle & family safety.'),
@@ -197,7 +197,7 @@ class ProfileScreen extends StatelessWidget {
                     builder: (ctx) => AlertDialog(
                       title: const Text('Privacy Policy'),
                       content: const Text(
-                        'TrackMyPhone is a consent-based location tracker. Your location coordinates are recorded only when tracking is active. You can stop or revoke sharing access at any time.',
+                        'RaahMilo is a consent-based location tracker. Your location coordinates are recorded only when tracking is active. You can stop or revoke sharing access at any time.',
                       ),
                       actions: [
                         TextButton(

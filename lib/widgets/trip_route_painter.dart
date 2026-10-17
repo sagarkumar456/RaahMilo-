@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../core/app_colors.dart';
 import '../models/trip_model.dart';
@@ -103,6 +104,37 @@ class _RouteThumbnailPainter extends CustomPainter {
       ..strokeJoin = StrokeJoin.round;
 
     canvas.drawPath(path, linePaint);
+
+    // Direction arrow at midpoint of path
+    if (points.length >= 2) {
+      final midIdx = points.length ~/ 2;
+      final pFrom = points[midIdx > 0 ? midIdx - 1 : 0];
+      final pTo = points[midIdx];
+      final fx = pad + ((pFrom.longitude - minLng) / lngSpan) * drawW;
+      final fy = size.height - (pad + ((pFrom.latitude - minLat) / latSpan) * drawH);
+      final tx = pad + ((pTo.longitude - minLng) / lngSpan) * drawW;
+      final ty = size.height - (pad + ((pTo.latitude - minLat) / latSpan) * drawH);
+
+      final angle = atan2(ty - fy, tx - fx);
+      if ((tx - fx).abs() > 1 || (ty - fy).abs() > 1) {
+        final arrowPaint = Paint()
+          ..color = Colors.white
+          ..style = PaintingStyle.fill;
+        final arrowPath = Path();
+        const arrowLen = 6.0;
+        arrowPath.moveTo(tx, ty);
+        arrowPath.lineTo(
+          tx - arrowLen * cos(angle - 0.5),
+          ty - arrowLen * sin(angle - 0.5),
+        );
+        arrowPath.lineTo(
+          tx - arrowLen * cos(angle + 0.5),
+          ty - arrowLen * sin(angle + 0.5),
+        );
+        arrowPath.close();
+        canvas.drawPath(arrowPath, arrowPaint);
+      }
+    }
 
     // Start point (Green)
     final first = points.first;

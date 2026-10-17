@@ -6,10 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/trip_model.dart';
 import '../models/app_notification.dart';
+import 'geocoding_service.dart';
 import 'geofence_service.dart';
 import 'notification_service.dart';
+import 'share_service.dart';
 
 class TrackingService extends ChangeNotifier {
   static final TrackingService _instance = TrackingService._internal();
@@ -17,6 +20,7 @@ class TrackingService extends ChangeNotifier {
 
   TrackingService._internal() {
     _initDefaultHistory();
+    restoreActiveSession();
   }
 
   StreamSubscription<Position>? _positionSubscription;
@@ -60,85 +64,40 @@ class TrackingService extends ChangeNotifier {
   }
 
   void _initDefaultHistory() {
-    final now = DateTime.now();
-    _historyTrips.addAll([
-      TripModel(
-        id: 'trip_1',
-        title: 'Trip to Office',
-        ownerId: 'default_user',
-        viewerIds: [],
-        startedAt: now.subtract(const Duration(days: 1, hours: 4)),
-        endedAt: now.subtract(const Duration(days: 1, hours: 3, minutes: 28)),
-        distanceMeters: 12400,
-        isActive: false,
-        points: _generateSamplePath(28.6139, 77.2090, 0.05, 0.04),
-      ),
-      TripModel(
-        id: 'trip_2',
-        title: 'Evening Ride',
-        ownerId: 'default_user',
-        viewerIds: [],
-        startedAt: now.subtract(const Duration(days: 2, hours: 6)),
-        endedAt: now.subtract(const Duration(days: 2, hours: 5, minutes: 15)),
-        distanceMeters: 18600,
-        isActive: false,
-        points: _generateSamplePath(28.6250, 77.2180, -0.06, 0.05),
-      ),
-      TripModel(
-        id: 'trip_3',
-        title: 'Market Visit',
-        ownerId: 'default_user',
-        viewerIds: [],
-        startedAt: now.subtract(const Duration(days: 3, hours: 8)),
-        endedAt: now.subtract(const Duration(days: 3, hours: 7, minutes: 40)),
-        distanceMeters: 8300,
-        isActive: false,
-        points: _generateSamplePath(28.6100, 77.2000, 0.03, -0.02),
-      ),
-      TripModel(
-        id: 'trip_4',
-        title: 'Morning Ride',
-        ownerId: 'default_user',
-        viewerIds: [],
-        startedAt: now.subtract(const Duration(days: 4, hours: 10)),
-        endedAt: now.subtract(const Duration(days: 4, hours: 9, minutes: 2)),
-        distanceMeters: 25100,
-        isActive: false,
-        points: _generateSamplePath(28.6300, 77.2200, 0.08, 0.07),
-      ),
-      TripModel(
-        id: 'trip_5',
-        title: 'Family Trip',
-        ownerId: 'default_user',
-        viewerIds: [],
-        startedAt: now.subtract(const Duration(days: 5, hours: 14)),
-        endedAt: now.subtract(const Duration(days: 5, hours: 12, minutes: 45)),
-        distanceMeters: 42700,
-        isActive: false,
-        points: _generateSamplePath(28.5900, 77.1800, -0.12, 0.10),
-      ),
-    ]);
+    // History contains only genuine trips recorded on the device
   }
 
-  static List<TripPoint> _generateSamplePath(double startLat, double startLng, double dLat, double dLng) {
-    final List<TripPoint> pts = [];
-    const count = 15;
-    final now = DateTime.now();
-    for (int i = 0; i < count; i++) {
-      final fraction = i / (count - 1);
-      final lat = startLat + dLat * fraction + (i % 2 == 0 ? 0.002 : -0.002);
-      final lng = startLng + dLng * fraction + (i % 3 == 0 ? -0.001 : 0.002);
-      pts.add(
-        TripPoint(
-          latitude: lat,
-          longitude: lng,
-          speed: 12.0 + (i % 4) * 5.0,
-          accuracy: 4.5,
-          timestamp: now.subtract(Duration(minutes: (count - i) * 2)),
+  void setCurrentPosition(Position p) {
+    _current = p;
+    geocodingService.updateFromPosition(p.latitude, p.longitude);
+    notifyListeners();
+  }
+
+  Future<Position?> initCurrentLocation() async {
+    try {
+      final perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+        return null;
+      }
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) {
+        _current = last;
+        geocodingService.updateFromPosition(last.latitude, last.longitude);
+        notifyListeners();
+      }
+      final current = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 6),
         ),
       );
+      _current = current;
+      geocodingService.updateFromPosition(current.latitude, current.longitude);
+      notifyListeners();
+      return current;
+    } catch (_) {
+      return _current;
     }
-    return pts;
   }
 
   Future<void> start() async {
@@ -197,37 +156,17 @@ class TrackingService extends ChangeNotifier {
       _active = true;
       notifyListeners();
 
+      // Persist tracking session
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('is_tracking_active', true);
+        await prefs.setString('active_trip_id', _tripId!);
+        await prefs.setString('active_trip_began', _began!.toIso8601String());
+        await prefs.setDouble('active_trip_meters', _meters);
+      } catch (_) {}
+
       // Reliable background & foreground tracking configuration
-      late LocationSettings locationSettings;
-      if (defaultTargetPlatform == TargetPlatform.android) {
-        locationSettings = AndroidSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 3,
-          forceLocationManager: true,
-          intervalDuration: const Duration(seconds: 2),
-          foregroundNotificationConfig: const ForegroundNotificationConfig(
-            notificationTitle: "TrackMyPhone is Active",
-            notificationText: "Live GPS tracking in progress...",
-            enableWakeLock: true,
-            setOngoing: true,
-            color: Colors.blue,
-          ),
-        );
-      } else if (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS) {
-        locationSettings = AppleSettings(
-          accuracy: LocationAccuracy.high,
-          activityType: ActivityType.fitness,
-          distanceFilter: 3,
-          pauseLocationUpdatesAutomatically: false,
-          showBackgroundLocationIndicator: true,
-        );
-      } else {
-        locationSettings = const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 3,
-        );
-      }
+      final locationSettings = _createLocationSettings();
 
       // Initial fix
       try {
@@ -285,6 +224,9 @@ class TrackingService extends ChangeNotifier {
     _current = p;
     _points.add(LatLng(p.latitude, p.longitude));
 
+    // Update reverse geocoded address
+    geocodingService.updateFromPosition(p.latitude, p.longitude);
+
     // Check geofences
     GeofenceService().checkLocation(p);
 
@@ -297,6 +239,19 @@ class TrackingService extends ChangeNotifier {
         type: NotificationType.speedAlert,
       );
     }
+
+    // Keep persisted meters updated in SharedPreferences
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setDouble('active_trip_meters', _meters);
+    }).catchError((_) {});
+
+    // Update live shared locations with viewer accounts
+    shareService.updateMySharedLocations(
+      lat: p.latitude,
+      lng: p.longitude,
+      speed: p.speed,
+      address: geocodingService.fullAddress,
+    );
 
     notifyListeners();
 
@@ -329,6 +284,89 @@ class TrackingService extends ChangeNotifier {
     }
   }
 
+  LocationSettings _createLocationSettings() {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return AndroidSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 3,
+        forceLocationManager: true,
+        intervalDuration: const Duration(seconds: 2),
+        foregroundNotificationConfig: const ForegroundNotificationConfig(
+          notificationTitle: "RaahMilo is Active",
+          notificationText: "Live GPS tracking in progress...",
+          enableWakeLock: true,
+          setOngoing: true,
+          color: Color(0xFF10B981),
+        ),
+      );
+    } else if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return AppleSettings(
+        accuracy: LocationAccuracy.high,
+        activityType: ActivityType.fitness,
+        distanceFilter: 3,
+        pauseLocationUpdatesAutomatically: false,
+        showBackgroundLocationIndicator: true,
+      );
+    } else {
+      return const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 3,
+      );
+    }
+  }
+
+  Future<void> restoreActiveSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final isActive = prefs.getBool('is_tracking_active') ?? false;
+      if (!isActive) return;
+
+      final savedTripId = prefs.getString('active_trip_id');
+      final beganStr = prefs.getString('active_trip_began');
+      final savedMeters = prefs.getDouble('active_trip_meters') ?? 0.0;
+
+      if (savedTripId == null || beganStr == null) return;
+
+      _tripId = savedTripId;
+      _began = DateTime.tryParse(beganStr) ?? DateTime.now();
+      _meters = savedMeters;
+      _active = true;
+      _elapsed = DateTime.now().difference(_began!);
+
+      _timer?.cancel();
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (_began != null) {
+          _elapsed = DateTime.now().difference(_began!);
+          notifyListeners();
+        }
+      });
+
+      final locationSettings = _createLocationSettings();
+      await _positionSubscription?.cancel();
+      _positionSubscription = Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen(
+        (p) => _onPosition(p),
+        onError: (Object e) {
+          _lastError = e.toString();
+          notifyListeners();
+        },
+      );
+
+      try {
+        final currentPos = await Geolocator.getCurrentPosition(
+          locationSettings: locationSettings,
+        );
+        _onPosition(currentPos);
+      } catch (_) {}
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error restoring tracking session: $e');
+    }
+  }
+
   Future<void> stop() async {
     _active = false;
     _timer?.cancel();
@@ -338,6 +376,15 @@ class TrackingService extends ChangeNotifier {
 
     final id = _tripId;
     _tripId = null;
+
+    // Clear persisted active session from SharedPreferences
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('is_tracking_active');
+      await prefs.remove('active_trip_id');
+      await prefs.remove('active_trip_began');
+      await prefs.remove('active_trip_meters');
+    } catch (_) {}
 
     if (id != null && !id.startsWith('local_')) {
       try {
@@ -373,6 +420,13 @@ class TrackingService extends ChangeNotifier {
         ),
       );
     }
+
+    // Add Notification for stopped tracking
+    NotificationService().addNotification(
+      title: 'Tracking Stopped',
+      subtitle: 'Live tracking session has ended',
+      type: NotificationType.trackingStopped,
+    );
 
     notifyListeners();
   }

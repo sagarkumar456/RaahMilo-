@@ -165,7 +165,7 @@ class NotificationsScreen extends StatelessWidget {
                 ],
               ),
             ),
-            // Blue Unread Dot
+            // Green Unread Dot
             if (!notification.isRead)
               Container(
                 width: 8,

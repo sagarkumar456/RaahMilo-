@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
 import '../models/trip_model.dart';
+import '../utils/path_arrows.dart';
 import 'share_screen.dart';
 
 class TripDetailsScreen extends StatefulWidget {
@@ -35,6 +37,28 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             TripPoint(latitude: 28.6139, longitude: 77.2090, speed: 25.0, accuracy: 4.0, timestamp: widget.trip.startedAt.add(const Duration(minutes: 20))),
             TripPoint(latitude: 28.6080, longitude: 77.2140, speed: 20.0, accuracy: 4.0, timestamp: widget.trip.startedAt.add(const Duration(minutes: 32))),
           ];
+    _loadTripPointsFromFirestore();
+  }
+
+  Future<void> _loadTripPointsFromFirestore() async {
+    if (widget.trip.points.isNotEmpty || widget.trip.id.startsWith('local_')) return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('trips')
+          .doc(widget.trip.id)
+          .collection('points')
+          .orderBy('at')
+          .get();
+      if (snap.docs.isNotEmpty && mounted) {
+        final pts = snap.docs.map((d) => TripPoint.fromMap(d.data())).toList();
+        setState(() {
+          _points = pts;
+        });
+        if (pts.isNotEmpty) {
+          _mapController.move(ll.LatLng(pts.first.latitude, pts.first.longitude), 15.0);
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -152,6 +176,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   ),
                 ],
               ),
+              // Directional arrows along route
+              MarkerLayer(
+                markers: buildDirectionalArrowMarkers(latLngList),
+              ),
               MarkerLayer(
                 markers: [
                   if (latLngList.isNotEmpty)
@@ -160,7 +188,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       width: 36,
                       height: 36,
                       alignment: Alignment.topCenter,
-                      child: const Icon(Icons.location_on_rounded, color: Color(0xFF0052CC), size: 36),
+                      child: const Icon(Icons.location_on_rounded, color: AppColors.primary, size: 36),
                     ),
                   if (latLngList.isNotEmpty)
                     Marker(
@@ -180,8 +208,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                         color: AppColors.primary,
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2.5),
-                        boxShadow: const [
-                          BoxShadow(color: Color(0x400866FF), blurRadius: 8, offset: Offset(0, 2)),
+                        boxShadow: [
+                          BoxShadow(color: AppColors.primary.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 2)),
                         ],
                       ),
                       child: const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 22),
@@ -300,14 +328,14 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                         child: Container(
                           width: 48,
                           height: 48,
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                             color: AppColors.primary,
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
-                                color: Color(0x400866FF),
+                                color: AppColors.primary.withValues(alpha: 0.25),
                                 blurRadius: 12,
-                                offset: Offset(0, 4),
+                                offset: const Offset(0, 4),
                               ),
                             ],
                           ),

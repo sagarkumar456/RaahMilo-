@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import '../core/app_colors.dart';
+import '../services/geocoding_service.dart';
 
 class TrackingDetailsSheet extends StatelessWidget {
   final Position? position;
@@ -44,6 +45,12 @@ class TrackingDetailsSheet extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
+            _metricTile(
+              icon: Icons.navigation_rounded,
+              title: 'Current Area',
+              value: geocodingService.currentTitle,
+            ),
+            const Divider(color: AppColors.border, height: 20),
             _metricTile(
               icon: Icons.location_on_rounded,
               title: 'Latitude',

@@ -3,20 +3,20 @@ service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function owner() { return signedIn() && resource.data.ownerId == request.auth.uid; }
-    function allowed() { return signedIn() && (resource.data.ownerId == request.auth.uid || request.auth.uid in resource.data.viewerIds); }
+    function allowed() { return signedIn() && (resource.data.ownerId == request.auth.uid || request.auth.uid in resource.data.viewerIds || (request.auth.token.email != null && request.auth.token.email in resource.data.viewerIds)); }
     match /trips/{tripId} {
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid
-        && request.resource.data.viewerIds == [];
-      allow read: if allowed();
-      allow update: if owner() && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.viewerIds is list
-        && request.resource.data.viewerIds.size() <= 20;
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if signedIn();
+      allow update: if signedIn() && (resource.data.ownerId == request.auth.uid || allowed());
       allow delete: if owner();
       match /points/{pointId} {
-        allow read: if signedIn() && (get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid || request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.viewerIds);
+        allow read: if signedIn();
         allow create: if signedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid;
         allow update, delete: if false;
       }
+    }
+    match /device_shares/{shareId} {
+      allow read, write: if signedIn();
     }
   }
 }

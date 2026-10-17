@@ -17,6 +17,12 @@ class WelcomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 12),
+              Image.asset(
+                'assets/images/logo_horizontal.png',
+                height: 38,
+                fit: BoxFit.contain,
+              ),
+              const SizedBox(height: 18),
               // Main Heading
               const Text(
                 'Turn Your Phone\ninto a GPS Tracker',
@@ -207,7 +213,7 @@ class WelcomeScreen extends StatelessWidget {
                   right: 6,
                   child: Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF1F6FD),
+                      color: AppColors.primaryLight,
                       borderRadius: BorderRadius.circular(14),
                     ),
                     child: Stack(

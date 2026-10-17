@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/app_colors.dart';
 import '../services/notification_service.dart';
 import 'dashboard_screen.dart';
@@ -36,16 +37,33 @@ class _HomeShellState extends State<HomeShell> {
       builder: (context, _) {
         final unreadCount = NotificationService().unreadCount;
 
-        return Scaffold(
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) return;
+            SystemNavigator.pop();
+          },
+          child: Scaffold(
           backgroundColor: Colors.white,
           appBar: AppBar(
-            title: const Text(
-              'TrackMyPhone',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                color: AppColors.navyDark,
-                letterSpacing: -0.3,
-              ),
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Image.asset(
+                  'assets/images/logo_pin.png',
+                  height: 26,
+                  fit: BoxFit.contain,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'RaahMilo',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.navyDark,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ],
             ),
             automaticallyImplyLeading: false,
             actions: [
@@ -139,7 +157,7 @@ class _HomeShellState extends State<HomeShell> {
               ],
             ),
           ),
-        );
+        ));
       },
     );
   }

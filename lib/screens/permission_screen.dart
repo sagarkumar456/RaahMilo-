@@ -165,7 +165,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
         width: 170,
         height: 170,
         decoration: BoxDecoration(
-          color: const Color(0xFFF1F6FD),
+          color: AppColors.primaryLight,
           shape: BoxShape.circle,
         ),
         child: Stack(

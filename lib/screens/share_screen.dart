@@ -1,7 +1,6 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../core/app_colors.dart';
-import '../services/tracking_service.dart';
+import '../services/share_service.dart';
 
 class ShareScreen extends StatefulWidget {
   final String? tripId;
@@ -37,13 +36,7 @@ class _ShareScreenState extends State<ShareScreen> {
     setState(() => _isSharing = true);
 
     try {
-      final tripId = widget.tripId ?? trackingService.tripId;
-      if (tripId != null && !tripId.startsWith('local_')) {
-        final ref = FirebaseFirestore.instance.collection('trips').doc(tripId);
-        await ref.update({
-          'viewerIds': FieldValue.arrayUnion([recipient]),
-        });
-      }
+      await shareService.shareLocationWith(recipient);
 
       setState(() {
         if (!_sharedViewers.contains(recipient)) {
@@ -54,7 +47,19 @@ class _ShareScreenState extends State<ShareScreen> {
       _recipientController.clear();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Access granted to $recipient')),
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Live location shared with $recipient! They can track you on their Home screen.'),
+                ),
+              ],
+            ),
+            backgroundColor: AppColors.success,
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     } catch (e) {
@@ -154,7 +159,7 @@ class _ShareScreenState extends State<ShareScreen> {
                 subtitle: 'Allow access for limited time',
               ),
               const SizedBox(height: 28),
-              // "Share" Blue Button
+              // "Share" Button
               ElevatedButton(
                 onPressed: _isSharing ? null : _shareAccess,
                 child: _isSharing
@@ -257,17 +262,17 @@ class _ShareScreenState extends State<ShareScreen> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFF38BDF8), width: 2.2),
+                  border: Border.all(color: AppColors.primary, width: 2.2),
                   boxShadow: [
                     BoxShadow(
-                      color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
+                      color: AppColors.primary.withValues(alpha: 0.15),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
                   ],
                 ),
                 child: const Center(
-                  child: Icon(Icons.location_on_rounded, color: Color(0xFF38BDF8), size: 28),
+                  child: Icon(Icons.location_on_rounded, color: AppColors.primary, size: 28),
                 ),
               ),
             ),
