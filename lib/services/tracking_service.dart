@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/trip_model.dart';
 import '../models/app_notification.dart';
+import 'auth_service.dart';
 import 'geocoding_service.dart';
 import 'geofence_service.dart';
 import 'notification_service.dart';
@@ -142,7 +143,7 @@ class TrackingService extends ChangeNotifier {
 
       // Save initial trip to Firestore if available
       try {
-        final uid = FirebaseAuth.instance.currentUser?.uid ?? 'guest_tracker';
+        final uid = authService.uid;
         final ref = await FirebaseFirestore.instance.collection('trips').add({
           'title': 'Trip at ${DateFormat('hh:mm a').format(_began!)}',
           'ownerId': uid,
@@ -381,7 +382,7 @@ class TrackingService extends ChangeNotifier {
         final staleTrip = TripModel(
           id: savedTripId,
           title: 'Trip at ${DateFormat('hh:mm a').format(beganDate)}',
-          ownerId: FirebaseAuth.instance.currentUser?.uid ?? 'user',
+          ownerId: authService.uid,
           viewerIds: [],
           startedAt: beganDate,
           endedAt: lastPointTime,
@@ -535,7 +536,7 @@ class TrackingService extends ChangeNotifier {
     final completedTrip = TripModel(
       id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
       title: 'Trip at ${DateFormat('hh:mm a').format(beganTime)}',
-      ownerId: FirebaseAuth.instance.currentUser?.uid ?? 'user',
+      ownerId: authService.uid,
       viewerIds: [],
       startedAt: beganTime,
       endedAt: now,
@@ -586,21 +587,20 @@ class TrackingService extends ChangeNotifier {
 
   Future<void> syncFirestoreHistory() async {
     try {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return;
+      final uid = authService.uid;
+      if (uid.isEmpty) return;
 
       final snapshot = await FirebaseFirestore.instance
           .collection('trips')
-          .where('ownerId', isEqualTo: user.uid)
-          .where('active', isEqualTo: false)
-          .orderBy('startedAt', descending: true)
-          .limit(30)
+          .where('ownerId', isEqualTo: uid)
           .get();
 
       final existingIds = _historyTrips.map((t) => t.id).toSet();
       bool changed = false;
 
-      for (final doc in snapshot.docs) {
+      final docs = snapshot.docs.where((d) => d.data()['active'] != true).toList();
+
+      for (final doc in docs) {
         if (!existingIds.contains(doc.id)) {
           final firestoreTrip = TripModel.fromFirestore(doc.id, doc.data());
           _historyTrips.add(firestoreTrip);
