@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
 import '../models/trip_model.dart';
 import 'share_screen.dart';
@@ -15,7 +16,7 @@ class TripDetailsScreen extends StatefulWidget {
 }
 
 class _TripDetailsScreenState extends State<TripDetailsScreen> {
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   bool _isPlaying = false;
   double _sliderValue = 0.5;
   int _playbackSpeed = 1; // 1x, 2x, 4x
@@ -84,8 +85,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     if (_points.isEmpty) return;
     final index = ((_points.length - 1) * _sliderValue).round().clamp(0, _points.length - 1);
     final pt = _points[index];
-    _mapController?.animateCamera(
-      CameraUpdate.newLatLng(LatLng(pt.latitude, pt.longitude)),
+    _mapController.move(
+      ll.LatLng(pt.latitude, pt.longitude),
+      _mapController.camera.zoom,
     );
   }
 
@@ -101,45 +103,12 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final latLngList = _points.map((p) => p.toLatLng()).toList();
+    final latLngList = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
     final currentPlaybackPt = _points.isNotEmpty
-        ? _points[((_points.length - 1) * _sliderValue).round().clamp(0, _points.length - 1)].toLatLng()
-        : const LatLng(28.6139, 77.2090);
+        ? _points[((_points.length - 1) * _sliderValue).round().clamp(0, _points.length - 1)]
+        : TripPoint(latitude: 28.6139, longitude: 77.2090, speed: 0, accuracy: 5, timestamp: DateTime.now());
 
-    final markers = <Marker>{
-      if (latLngList.isNotEmpty)
-        Marker(
-          markerId: const MarkerId('start'),
-          position: latLngList.first,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-          infoWindow: const InfoWindow(title: 'Start Location'),
-        ),
-      if (latLngList.isNotEmpty)
-        Marker(
-          markerId: const MarkerId('end'),
-          position: latLngList.last,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: const InfoWindow(title: 'Destination'),
-        ),
-      Marker(
-        markerId: const MarkerId('playback_car'),
-        position: currentPlaybackPt,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-        infoWindow: const InfoWindow(title: 'Playback Position'),
-      ),
-    };
-
-    final polylines = <Polyline>{
-      Polyline(
-        polylineId: const PolylineId('trip_route'),
-        points: latLngList,
-        color: AppColors.primary,
-        width: 5,
-        jointType: JointType.round,
-        startCap: Cap.roundCap,
-        endCap: Cap.roundCap,
-      ),
-    };
+    final currentPlaybackLL = ll.LatLng(currentPlaybackPt.latitude, currentPlaybackPt.longitude);
 
     return Scaffold(
       appBar: AppBar(
@@ -162,26 +131,74 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       ),
       body: Stack(
         children: [
-          // 1. Google Map showing path & playback position
-          GoogleMap(
-            initialCameraPosition: CameraPosition(
-              target: currentPlaybackPt,
-              zoom: 14.5,
+          // 1. OpenStreetMap showing route path & playback position
+          FlutterMap(
+            mapController: _mapController,
+            options: MapOptions(
+              initialCenter: currentPlaybackLL,
+              initialZoom: 14.8,
             ),
-            markers: markers,
-            polylines: polylines,
-            zoomControlsEnabled: false,
-            myLocationButtonEnabled: false,
-            onMapCreated: (ctrl) => _mapController = ctrl,
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.trackmyphone.gps',
+              ),
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: latLngList,
+                    strokeWidth: 5.0,
+                    color: AppColors.primary,
+                  ),
+                ],
+              ),
+              MarkerLayer(
+                markers: [
+                  if (latLngList.isNotEmpty)
+                    Marker(
+                      point: latLngList.first,
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.topCenter,
+                      child: const Icon(Icons.location_on_rounded, color: Color(0xFF0052CC), size: 36),
+                    ),
+                  if (latLngList.isNotEmpty)
+                    Marker(
+                      point: latLngList.last,
+                      width: 36,
+                      height: 36,
+                      alignment: Alignment.topCenter,
+                      child: const Icon(Icons.flag_rounded, color: AppColors.danger, size: 36),
+                    ),
+                  Marker(
+                    point: currentPlaybackLL,
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2.5),
+                        boxShadow: const [
+                          BoxShadow(color: Color(0x400866FF), blurRadius: 8, offset: Offset(0, 2)),
+                        ],
+                      ),
+                      child: const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 22),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
 
           // 2. Playback Bottom Card matching Screen 10
           Positioned(
-            bottom: 20,
+            bottom: 14,
             left: 16,
             right: 16,
             child: Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
@@ -214,7 +231,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       color: AppColors.textSecondary,
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   // 3 Stats Columns
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -233,7 +250,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 10),
                   // Timestamp above slider
                   Align(
                     alignment: Alignment.centerLeft,
@@ -263,7 +280,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       },
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   // Controls Bar: Camera, Play/Pause, Speed
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -281,8 +298,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       GestureDetector(
                         onTap: _togglePlayPause,
                         child: Container(
-                          width: 52,
-                          height: 52,
+                          width: 48,
+                          height: 48,
                           decoration: const BoxDecoration(
                             color: AppColors.primary,
                             shape: BoxShape.circle,
@@ -297,7 +314,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                           child: Icon(
                             _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                             color: Colors.white,
-                            size: 30,
+                            size: 28,
                           ),
                         ),
                       ),

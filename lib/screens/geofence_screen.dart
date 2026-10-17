@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
 import '../services/geofence_service.dart';
 import '../services/tracking_service.dart';
@@ -12,11 +13,11 @@ class GeofenceScreen extends StatefulWidget {
 }
 
 class _GeofenceScreenState extends State<GeofenceScreen> {
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   final _nameController = TextEditingController(text: 'Home');
   double _radius = 500.0;
   bool _notifyOnEntryExit = true;
-  LatLng _center = const LatLng(28.6139, 77.2090);
+  ll.LatLng _center = const ll.LatLng(28.6139, 77.2090);
 
   @override
   void initState() {
@@ -26,11 +27,11 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
       _nameController.text = existing.name;
       _radius = existing.radiusMeters;
       _notifyOnEntryExit = existing.notifyOnEntryExit;
-      _center = existing.center;
+      _center = ll.LatLng(existing.latitude, existing.longitude);
     } else {
       final pos = trackingService.current;
       if (pos != null) {
-        _center = LatLng(pos.latitude, pos.longitude);
+        _center = ll.LatLng(pos.latitude, pos.longitude);
       }
     }
   }
@@ -60,26 +61,6 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
     return AnimatedBuilder(
       animation: Listenable.merge([GeofenceService(), trackingService]),
       builder: (context, _) {
-        final circles = <Circle>{
-          Circle(
-            circleId: const CircleId('geofence_circle'),
-            center: _center,
-            radius: _radius,
-            fillColor: AppColors.primary.withValues(alpha: 0.15),
-            strokeColor: AppColors.primary,
-            strokeWidth: 2,
-          ),
-        };
-
-        final markers = <Marker>{
-          Marker(
-            markerId: const MarkerId('geofence_center'),
-            position: _center,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-            infoWindow: InfoWindow(title: _nameController.text),
-          ),
-        };
-
         final isInside = GeofenceService().isInside;
         final distance = GeofenceService().lastDistance;
 
@@ -96,10 +77,8 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
                 onPressed: () {
                   final pos = trackingService.current;
                   if (pos != null) {
-                    setState(() => _center = LatLng(pos.latitude, pos.longitude));
-                    _mapController?.animateCamera(
-                      CameraUpdate.newLatLng(_center),
-                    );
+                    setState(() => _center = ll.LatLng(pos.latitude, pos.longitude));
+                    _mapController.move(_center, 15.0);
                   }
                 },
               ),
@@ -107,25 +86,54 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
           ),
           body: Stack(
             children: [
-              // 1. Google Map with Circle and Pin
-              GoogleMap(
-                initialCameraPosition: CameraPosition(
-                  target: _center,
-                  zoom: 14.8,
+              // 1. OpenStreetMap with Circle Safe Zone & Pin
+              FlutterMap(
+                mapController: _mapController,
+                options: MapOptions(
+                  initialCenter: _center,
+                  initialZoom: 15.0,
+                  onTap: (tapPosition, point) {
+                    setState(() => _center = point);
+                  },
                 ),
-                circles: circles,
-                markers: markers,
-                zoomControlsEnabled: false,
-                myLocationButtonEnabled: false,
-                onTap: (tappedLocation) {
-                  setState(() => _center = tappedLocation);
-                },
-                onMapCreated: (ctrl) => _mapController = ctrl,
+                children: [
+                  TileLayer(
+                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.trackmyphone.gps',
+                  ),
+                  CircleLayer(
+                    circles: [
+                      CircleMarker(
+                        point: _center,
+                        radius: _radius,
+                        useRadiusInMeter: true,
+                        color: AppColors.primary.withValues(alpha: 0.18),
+                        borderColor: AppColors.primary,
+                        borderStrokeWidth: 2.5,
+                      ),
+                    ],
+                  ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _center,
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.topCenter,
+                        child: const Icon(
+                          Icons.location_on_rounded,
+                          color: AppColors.primary,
+                          size: 42,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
 
               // Status pill at top
               Positioned(
-                top: 16,
+                top: 14,
                 left: 20,
                 right: 20,
                 child: Container(
@@ -173,11 +181,11 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
 
               // 2. Bottom Geofence Setup Card matching Screen 12
               Positioned(
-                bottom: 20,
+                bottom: 14,
                 left: 16,
                 right: 16,
                 child: Container(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
@@ -230,7 +238,7 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
                           onChanged: (val) => setState(() => _radius = val),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
                       // Zone Name
                       const Text(
                         'Name',
@@ -248,7 +256,7 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
                           contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         ),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 12),
                       // Toggle: Get notifications when device enters or leaves
                       Row(
                         children: [
@@ -269,7 +277,7 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
                       // "Save Geofence" Button
                       ElevatedButton(
                         onPressed: _saveGeofence,
