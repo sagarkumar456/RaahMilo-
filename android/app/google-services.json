@@ -1,0 +1,83 @@
+{
+  "project_info": {
+    "project_number": "848087329356",
+    "firebase_url": "https://sagar-portfolio-d89f9-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "sagar-portfolio-d89f9",
+    "storage_bucket": "sagar-portfolio-d89f9.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:848087329356:android:082206ed35d3d40407e2e9",
+        "android_client_info": {
+          "package_name": "com.example.sagar_portfolio"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "848087329356-kgi9mqlh2gdfl5jaoapuf6aasovftqaj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0GL-bovcD_m-qC-sWLfR60I4luSc1qlk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "848087329356-kgi9mqlh2gdfl5jaoapuf6aasovftqaj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "848087329356-62s8l2o2plu1bm40aaard88s47qjl8s6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.sagarPortfolio"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:848087329356:android:a0b5eab7b1e4106d07e2e9",
+        "android_client_info": {
+          "package_name": "com.trackmyphone.gps"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "848087329356-kgi9mqlh2gdfl5jaoapuf6aasovftqaj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0GL-bovcD_m-qC-sWLfR60I4luSc1qlk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "848087329356-kgi9mqlh2gdfl5jaoapuf6aasovftqaj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "848087329356-62s8l2o2plu1bm40aaard88s47qjl8s6.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.sagarPortfolio"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

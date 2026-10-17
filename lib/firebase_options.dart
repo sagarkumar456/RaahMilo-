@@ -1,6 +1,4 @@
-// File generated for TrackMyPhone.
-// Replace with your actual project keys using `flutterfire configure`.
-
+// File generated for TrackMyPhone project: sagar-portfolio-d89f9.
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
@@ -34,37 +32,37 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyDemoPlaceholderWebApiKey12345678',
-    appId: '1:123456789012:web:abcdef1234567890',
-    messagingSenderId: '123456789012',
-    projectId: 'trackmyphone-gps',
-    authDomain: 'trackmyphone-gps.firebaseapp.com',
-    storageBucket: 'trackmyphone-gps.appspot.com',
+    apiKey: 'AIzaSyC0GL-bovcD_m-qC-sWLfR60I4luSc1qlk',
+    appId: '1:848087329356:web:125c2bb42a38db0d07e2e9',
+    messagingSenderId: '848087329356',
+    projectId: 'sagar-portfolio-d89f9',
+    authDomain: 'sagar-portfolio-d89f9.firebaseapp.com',
+    storageBucket: 'sagar-portfolio-d89f9.firebasestorage.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDemoPlaceholderAndroidApiKey123456',
-    appId: '1:123456789012:android:abcdef1234567890',
-    messagingSenderId: '123456789012',
-    projectId: 'trackmyphone-gps',
-    storageBucket: 'trackmyphone-gps.appspot.com',
+    apiKey: 'AIzaSyC0GL-bovcD_m-qC-sWLfR60I4luSc1qlk',
+    appId: '1:848087329356:android:a0b5eab7b1e4106d07e2e9',
+    messagingSenderId: '848087329356',
+    projectId: 'sagar-portfolio-d89f9',
+    storageBucket: 'sagar-portfolio-d89f9.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyDemoPlaceholderIosApiKey1234567890',
-    appId: '1:123456789012:ios:abcdef1234567890',
-    messagingSenderId: '123456789012',
-    projectId: 'trackmyphone-gps',
-    storageBucket: 'trackmyphone-gps.appspot.com',
+    apiKey: 'AIzaSyC0GL-bovcD_m-qC-sWLfR60I4luSc1qlk',
+    appId: '1:848087329356:ios:5e0a552acb58871907e2e9',
+    messagingSenderId: '848087329356',
+    projectId: 'sagar-portfolio-d89f9',
+    storageBucket: 'sagar-portfolio-d89f9.firebasestorage.app',
     iosBundleId: 'com.trackmyphone.gps',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyDemoPlaceholderMacApiKey1234567890',
-    appId: '1:123456789012:ios:abcdef1234567890',
-    messagingSenderId: '123456789012',
-    projectId: 'trackmyphone-demo',
-    storageBucket: 'trackmyphone-demo.appspot.com',
-    iosBundleId: 'com.trackmyphone.trackmyphone',
+    apiKey: 'AIzaSyC0GL-bovcD_m-qC-sWLfR60I4luSc1qlk',
+    appId: '1:848087329356:ios:5e0a552acb58871907e2e9',
+    messagingSenderId: '848087329356',
+    projectId: 'sagar-portfolio-d89f9',
+    storageBucket: 'sagar-portfolio-d89f9.firebasestorage.app',
+    iosBundleId: 'com.trackmyphone.gps',
   );
 }
