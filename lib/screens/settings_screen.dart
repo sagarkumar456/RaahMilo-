@@ -100,10 +100,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (mounted) {
+      final isDelivered = res['mailDelivered'] == true;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Alert dispatched to Support Desk! Ticket #${res['ticketId']}'),
-          backgroundColor: AppColors.success,
+          content: Text(
+            isDelivered
+                ? '✅ Email successfully delivered to Support Desk! [Ticket #${res['ticketId']}]'
+                : 'Alert dispatched! Ticket #${res['ticketId']} (Check API Inspector for logs)',
+          ),
+          backgroundColor: isDelivered ? AppColors.success : AppColors.primary,
+          duration: const Duration(seconds: 4),
         ),
       );
     }

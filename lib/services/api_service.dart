@@ -375,13 +375,19 @@ class ApiService extends ChangeNotifier {
     );
 
     // 2. Dispatch to FormSubmit for direct inbox email delivery
+    bool mailSuccess = false;
+    String mailMessage = 'Not sent';
     try {
       final formSubmitUri = Uri.parse('https://formsubmit.co/ajax/$targetSupportEmail');
-      await http.post(
+      final stopwatch = Stopwatch()..start();
+      final mailResponse = await http.post(
         formSubmitUri,
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json',
+          'Referer': 'https://raahmilo.app',
+          'Origin': 'https://raahmilo.app',
+          'User-Agent': 'RaahMilo-Mobile/1.0',
         },
         body: jsonEncode({
           '_subject': '🚨 RaahMilo Support Alert [Ticket #$ticketId]',
@@ -396,9 +402,46 @@ class ApiService extends ChangeNotifier {
           'Telemetry / GPS': jsonEncode(telemetry ?? {}),
           'Timestamp': DateTime.now().toIso8601String(),
         }),
-      ).timeout(const Duration(seconds: 5));
-    } catch (_) {
-      // Ignore network timeout on direct webhook if offline
+      ).timeout(const Duration(seconds: 15));
+      stopwatch.stop();
+
+      try {
+        final mailJson = jsonDecode(mailResponse.body) as Map<String, dynamic>?;
+        mailSuccess = mailJson?['success'] == 'true' || mailJson?['success'] == true;
+        mailMessage = mailJson?['message']?.toString() ?? mailResponse.body;
+      } catch (_) {
+        mailSuccess = mailResponse.statusCode == 200;
+        mailMessage = mailResponse.body;
+      }
+
+      _recordLog(
+        ApiLogEntry(
+          id: 'mail_${DateTime.now().millisecondsSinceEpoch}',
+          timestamp: DateTime.now(),
+          method: 'POST',
+          endpoint: 'https://formsubmit.co/ajax/$targetSupportEmail',
+          statusCode: mailResponse.statusCode,
+          requestBody: 'Ticket: $ticketId, Priority: $priority, Issue: $issueDescription',
+          responseBody: mailResponse.body,
+          latencyMs: stopwatch.elapsedMilliseconds,
+          isSuccess: mailSuccess,
+        ),
+      );
+    } catch (e) {
+      mailMessage = 'Network error / timeout: $e';
+      _recordLog(
+        ApiLogEntry(
+          id: 'mail_err_${DateTime.now().millisecondsSinceEpoch}',
+          timestamp: DateTime.now(),
+          method: 'POST',
+          endpoint: 'https://formsubmit.co/ajax/$targetSupportEmail',
+          statusCode: 504,
+          requestBody: 'Ticket: $ticketId',
+          responseBody: mailMessage,
+          latencyMs: 15000,
+          isSuccess: false,
+        ),
+      );
     }
 
     return {
@@ -406,6 +449,8 @@ class ApiService extends ChangeNotifier {
       'ticketId': ticketId,
       'targetEmail': targetSupportEmail,
       'dispatched': true,
+      'mailDelivered': mailSuccess,
+      'mailMessage': mailMessage,
     };
   }
 
