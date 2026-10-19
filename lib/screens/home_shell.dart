@@ -185,8 +185,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                           const SizedBox(width: 10),
                           const Expanded(
                             child: Text(
-                              '🚨 THEFT ALARM ACTIVE! Vehicle moved.',
+                              '🚨 THEFT ALARM! Vehicle moved.',
                               style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           TextButton(

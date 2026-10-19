@@ -474,14 +474,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               ],
                             ),
                           ),
-                          OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: AppColors.primary,
-                              side: const BorderSide(color: AppColors.primary),
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          SizedBox(
+                            width: 84,
+                            height: 32,
+                            child: OutlinedButton(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppColors.primary,
+                                side: const BorderSide(color: AppColors.primary),
+                                padding: EdgeInsets.zero,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              onPressed: _sendTestAlertToAdmin,
+                              child: const Text('Test Alert', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
                             ),
-                            onPressed: _sendTestAlertToAdmin,
-                            child: const Text('Test Alert', style: TextStyle(fontSize: 11)),
                           ),
                         ],
                       ),

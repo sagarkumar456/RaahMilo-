@@ -287,16 +287,20 @@ class DashboardScreen extends StatelessWidget {
                             children: [
                               Row(
                                 children: [
-                                  Text(
-                                    isAlarm
-                                        ? 'THEFT ALARM ACTIVE'
-                                        : isArmed
-                                            ? 'Anti-Theft Armed'
-                                            : 'Anti-Theft Disarmed',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                      color: isAlarm ? Colors.white : AppColors.navyDark,
+                                  Flexible(
+                                    child: Text(
+                                      isAlarm
+                                          ? 'THEFT ALARM'
+                                          : isArmed
+                                              ? 'Anti-Theft Armed'
+                                              : 'Anti-Theft Disarmed',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        color: isAlarm ? Colors.white : AppColors.navyDark,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
                                   const SizedBox(width: 6),
@@ -330,12 +334,14 @@ class DashboardScreen extends StatelessWidget {
                                 isAlarm
                                     ? 'Tap to silence siren or cut-off engine'
                                     : isArmed
-                                        ? 'Movement guard active (${antiTheftService.movementThresholdMeters.toInt()}m threshold)'
+                                        ? 'Guard active (${antiTheftService.movementThresholdMeters.toInt()}m limit)'
                                         : 'Tap to arm & lock parked location',
                                 style: TextStyle(
                                   fontSize: 11,
                                   color: isAlarm ? Colors.white70 : AppColors.textSecondary,
                                 ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ],
                           ),

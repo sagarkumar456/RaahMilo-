@@ -46,9 +46,15 @@ class _AntiTheftScreenState extends State<AntiTheftScreen> with SingleTickerProv
             const SnackBar(
               content: Row(
                 children: [
-                  Icon(Icons.shield_rounded, color: Colors.white),
+                  Icon(Icons.shield_rounded, color: Colors.white, size: 20),
                   SizedBox(width: 8),
-                  Text('Vehicle Armed! Anti-theft movement guard is ACTIVE.'),
+                  Expanded(
+                    child: Text(
+                      'Vehicle Armed! Anti-theft movement guard is ACTIVE.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
               backgroundColor: AppColors.success,
@@ -62,9 +68,15 @@ class _AntiTheftScreenState extends State<AntiTheftScreen> with SingleTickerProv
             const SnackBar(
               content: Row(
                 children: [
-                  Icon(Icons.lock_open_rounded, color: Colors.white),
+                  Icon(Icons.lock_open_rounded, color: Colors.white, size: 20),
                   SizedBox(width: 8),
-                  Text('Vehicle Disarmed. Security guard paused.'),
+                  Expanded(
+                    child: Text(
+                      'Vehicle Disarmed. Security guard paused.',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
               backgroundColor: Color(0xFF64748B),
