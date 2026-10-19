@@ -16,12 +16,15 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _apiUrlController = TextEditingController();
+  final TextEditingController _geminiKeyController = TextEditingController();
   String _speedUnit = 'km/h';
   String _gpsAccuracy = 'High Accuracy';
   bool _overspeedAlert = true;
   int _speedLimit = 80;
   bool _isPingingApi = false;
   bool _isSavingApi = false;
+  bool _isSendingTestAlert = false;
+  bool _showGeminiKey = false;
 
   bool _developerUnlocked = false;
   int _versionTapCount = 0;
@@ -35,6 +38,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _apiUrlController.text = apiService.baseUrl;
+    _geminiKeyController.text = apiService.geminiApiKey ?? '';
     _loadLocalPreferences();
   }
 
@@ -88,30 +92,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _sendTestAlertToAdmin() async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Sending test message to Support Desk via API...')),
-    );
+    if (_isSendingTestAlert) return;
+    setState(() => _isSendingTestAlert = true);
 
-    final res = await apiService.sendSupportIssueAlert(
-      userEmail: authService.email.isNotEmpty ? authService.email : 'user@raahmilo.com',
-      userUid: authService.uid.isNotEmpty ? authService.uid : 'device_test',
-      issueDescription: 'TEST SYSTEM CHECK: Verified settings alert dispatched from RaahMilo mobile app.',
-      priority: 'TEST_PING',
-    );
-
-    if (mounted) {
-      final isDelivered = res['mailDelivered'] == true;
+    try {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isDelivered
-                ? '✅ Email successfully delivered to Support Desk! [Ticket #${res['ticketId']}]'
-                : 'Alert dispatched! Ticket #${res['ticketId']} (Check API Inspector for logs)',
-          ),
-          backgroundColor: isDelivered ? AppColors.success : AppColors.primary,
-          duration: const Duration(seconds: 4),
-        ),
+        const SnackBar(content: Text('Sending test message to Support Desk via API...')),
       );
+
+      final res = await apiService.sendSupportIssueAlert(
+        userEmail: authService.email.isNotEmpty ? authService.email : 'user@raahmilo.com',
+        userUid: authService.uid.isNotEmpty ? authService.uid : 'device_test',
+        issueDescription: 'TEST SYSTEM CHECK: Verified settings alert dispatched from RaahMilo mobile app.',
+        priority: 'TEST_PING',
+        forceSend: true,
+      );
+
+      if (mounted) {
+        final isDelivered = res['mailDelivered'] == true;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isDelivered
+                  ? '✅ Email successfully delivered to Support Desk! [Ticket #${res['ticketId']}]'
+                  : 'Alert dispatched! Ticket #${res['ticketId']} (Check API Inspector for logs)',
+            ),
+            backgroundColor: isDelivered ? AppColors.success : AppColors.primary,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSendingTestAlert = false);
     }
   }
 
@@ -588,6 +600,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                         ],
+                      ),
+                      const Divider(height: 28),
+                      const Row(
+                        children: [
+                          Icon(Icons.smart_toy_rounded, color: Color(0xFF2563EB), size: 18),
+                          SizedBox(width: 6),
+                          Text('Google Gemini Free AI Key (Optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.navyDark)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '100% Free on aistudio.google.com. If left empty, the built-in Human Engine is active.',
+                        style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _geminiKeyController,
+                        obscureText: !_showGeminiKey,
+                        style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+                        decoration: InputDecoration(
+                          hintText: 'AIzaSy... (Paste free key from aistudio.google.com)',
+                          hintStyle: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          prefixIcon: IconButton(
+                            icon: Icon(_showGeminiKey ? Icons.visibility_off : Icons.visibility, size: 16),
+                            onPressed: () => setState(() => _showGeminiKey = !_showGeminiKey),
+                          ),
+                          suffixIcon: IconButton(
+                            icon: const Icon(Icons.save_rounded, size: 18),
+                            onPressed: () async {
+                              await apiService.setGeminiApiKey(_geminiKeyController.text);
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Gemini Free AI Key saved!'),
+                                    backgroundColor: AppColors.success,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
                       ),
                     ],
                   ),

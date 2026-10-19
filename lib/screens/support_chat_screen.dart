@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/app_colors.dart';
 import '../models/app_notification.dart';
+import '../services/ai_human_engine.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
@@ -35,6 +36,8 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   bool _isTyping = false;
+  bool _isSending = false;
+  String? _activeSessionTicketId;
   String _selectedLanguage = 'en'; // 'en' = English, 'hi' = Hindi
 
   List<String> get _quickSuggestions {
@@ -152,176 +155,113 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
   }
 
   Future<void> _handleSendMessage([String? predefinedText]) async {
+    if (_isSending || _isTyping) return;
+
     final text = (predefinedText ?? _controller.text).trim();
     if (text.isEmpty) return;
 
-    if (predefinedText == null) {
-      _controller.clear();
-    }
+    _isSending = true;
 
-    final userMsg = ChatMessage(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      text: text,
-      isUser: true,
-      timestamp: DateTime.now(),
-    );
-
-    setState(() {
-      _messages.add(userMsg);
-      _isTyping = true;
-    });
-    _scrollToBottom();
-
-    // Check if this is an issue requiring email escalation to admin
-    final bool hasIssue = _isIssueKeywords(text);
-    String? createdTicketId;
-
-    if (hasIssue) {
-      final userEmail = authService.email.isNotEmpty ? authService.email : 'user@raahmilo.com';
-      final uid = authService.uid.isNotEmpty ? authService.uid : 'user_guest';
-
-      try {
-        final alertRes = await apiService.sendSupportIssueAlert(
-          userEmail: userEmail,
-          userUid: uid,
-          issueDescription: text,
-          priority: text.toLowerCase().contains('chori') || text.toLowerCase().contains('theft')
-              ? 'CRITICAL_THEFT'
-              : 'HIGH',
-        );
-        createdTicketId = alertRes['ticketId'] ?? 'RM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
-
-        // Add to NotificationService
-        NotificationService().addNotification(
-          title: 'Ticket #$createdTicketId Created',
-          subtitle: 'Issue escalated to Support Desk',
-          type: NotificationType.supportTicket,
-        );
-      } catch (_) {
-        createdTicketId = 'RM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+    try {
+      if (predefinedText == null) {
+        _controller.clear();
       }
-    }
 
-    // Call API for AI message
-    final history = _messages.take(10).map((m) => {
-          'role': m.isUser ? 'user' : 'assistant',
-          'content': m.text,
-        }).toList();
+      final userMsg = ChatMessage(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        text: text,
+        isUser: true,
+        timestamp: DateTime.now(),
+      );
 
-    await apiService.sendAiChatMessage(
-      message: text,
-      chatHistory: history,
-      userEmail: authService.email,
-    );
-
-    // Determine reply language: if user explicitly typed Hindi or language is 'hi', reply in Hindi; otherwise English
-    final useHindi = _selectedLanguage == 'hi' || _isHindiInput(text);
-
-    // Generate intelligent AI response
-    await Future.delayed(const Duration(milliseconds: 550));
-    final botResponse = _generateAiResponse(text, createdTicketId, useHindi);
-
-    if (mounted) {
       setState(() {
-        _isTyping = false;
-        _messages.add(
-          ChatMessage(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            text: botResponse,
-            isUser: false,
-            timestamp: DateTime.now(),
-            ticketId: createdTicketId,
-            isIssueReported: hasIssue,
-          ),
-        );
+        _messages.add(userMsg);
+        _isTyping = true;
       });
       _scrollToBottom();
+
+      // Check if this is an issue requiring email escalation to admin
+      final bool hasIssue = _isIssueKeywords(text);
+      String? createdTicketId;
+
+      if (hasIssue) {
+        // If an issue was already escalated in this conversation, reuse ticket to avoid flooding inbox
+        if (_activeSessionTicketId != null) {
+          createdTicketId = _activeSessionTicketId;
+        } else {
+          final userEmail = authService.email.isNotEmpty ? authService.email : 'user@raahmilo.com';
+          final uid = authService.uid.isNotEmpty ? authService.uid : 'user_guest';
+
+          try {
+            final alertRes = await apiService.sendSupportIssueAlert(
+              userEmail: userEmail,
+              userUid: uid,
+              issueDescription: text,
+              priority: text.toLowerCase().contains('chori') || text.toLowerCase().contains('theft')
+                  ? 'CRITICAL_THEFT'
+                  : 'HIGH',
+            );
+            createdTicketId = alertRes['ticketId'] ?? 'RM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+            _activeSessionTicketId = createdTicketId;
+
+            // Add to NotificationService only for new escalated ticket
+            NotificationService().addNotification(
+              title: 'Ticket #$createdTicketId Created',
+              subtitle: 'Issue escalated to Support Desk',
+              type: NotificationType.supportTicket,
+            );
+          } catch (_) {
+            createdTicketId = 'RM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
+            _activeSessionTicketId = createdTicketId;
+          }
+        }
+      }
+
+      // Determine reply language: if user explicitly typed Hindi or language is 'hi', reply in Hindi; otherwise English
+      final useHindi = _selectedLanguage == 'hi' || _isHindiInput(text);
+
+      // Call API for AI message
+      final history = _messages.take(10).map((m) => {
+            'role': m.isUser ? 'user' : 'assistant',
+            'content': m.text,
+          }).toList();
+
+      final aiRes = await apiService.sendAiChatMessage(
+        message: text,
+        chatHistory: history,
+        userEmail: authService.email,
+        ticketId: createdTicketId,
+        useHindi: useHindi,
+      );
+
+      final botResponse = aiRes['reply']?.toString() ??
+          AiHumanEngine.generateHumanResponse(text, ticketId: createdTicketId, useHindi: useHindi);
+
+      if (mounted) {
+        setState(() {
+          _isTyping = false;
+          _messages.add(
+            ChatMessage(
+              id: DateTime.now().millisecondsSinceEpoch.toString(),
+              text: botResponse,
+              isUser: false,
+              timestamp: DateTime.now(),
+              ticketId: createdTicketId,
+              isIssueReported: hasIssue,
+            ),
+          );
+        });
+        _scrollToBottom();
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+        });
+      }
     }
   }
 
-  String _generateAiResponse(String input, String? ticketId, bool useHindi) {
-    final lower = input.toLowerCase();
-
-    // If ticket was raised
-    if (ticketId != null) {
-      if (useHindi) {
-        return 'Maine aapka issue note kar liya hai aur hamari support team ko alert bhej diya hai! ✅\n\n'
-            '📌 Ticket ID: #$ticketId\n'
-            'Status: Escalated to Support Desk\n\n'
-            'Hamari technical team jald hi aapse sampark karegi. Agar vehicle security se judi koi emergency hai, toh kripya turant Police (112) ko bhi sampark karein.';
-      } else {
-        return 'Your issue has been recorded and an urgent ticket has been forwarded to our Support Team! ✅\n\n'
-            '📌 Ticket ID: #$ticketId\n'
-            'Status: Escalated to Support Desk\n\n'
-            'Our technical team is reviewing this and will contact you shortly. If this is an active vehicle theft emergency, please also contact the emergency authorities (112).';
-      }
-    }
-
-    // Anti-theft queries
-    if (lower.contains('antitheft') || lower.contains('anti-theft') || lower.contains('arm')) {
-      if (useHindi) {
-        return '🛡️ Anti-Theft System RaahMilo ka high-security shield hai:\n\n'
-            '1. "Arm Vehicle" button dabane par gadi ka location anchor lock ho jata hai.\n'
-            '2. Agar gadi 8-15 meter se zyada hilti hai ya motion detect hota hai, toh loud siren bajega aur aapko alert aayega.\n'
-            '3. Aap app se remotely Siren alarm trigger ya silence kar sakte hain.\n'
-            '4. Emergency mein "Remote Engine Cut-off" switch se ignition immobilize kiya ja sakta hai.';
-      } else {
-        return '🛡️ RaahMilo Anti-Theft Security Guard:\n\n'
-            '1. **Arm Vehicle**: Tap "Arm Vehicle" to lock your current parked GPS coordinate.\n'
-            '2. **Movement Breach**: If the vehicle moves beyond the safety threshold (8–15m), the loud siren alarm triggers immediately.\n'
-            '3. **Remote Siren**: You can sound or silence the alarm siren remotely from the Anti-Theft screen.\n'
-            '4. **Engine Immobilizer**: Cut-off vehicle ignition remotely in case of theft.';
-      }
-    }
-
-    // Alarm queries
-    if (lower.contains('alarm') || lower.contains('siren') || lower.contains('baj raha') || lower.contains('ringing')) {
-      if (useHindi) {
-        return '🚨 Vehicle Alarm & Siren Alert:\n\n'
-            '• Alarm band karne ke liye Anti-Theft screen par "Silence Alarm" button dabayein.\n'
-            '• Gadi ko verify karein ki parked spot par surakshit hai ya nahi.\n'
-            '• Settings screen se Siren Loudness aur Sensitivity customize kar sakte hain.';
-      } else {
-        return '🚨 Vehicle Alarm & Siren Controls:\n\n'
-            '• To stop the alarm, tap **"Silence Siren"** on the Anti-Theft screen or top emergency banner.\n'
-            '• Check the live map to verify your vehicle\'s current position.\n'
-            '• You can customize siren loudness and motion sensitivity in the Settings screen.';
-      }
-    }
-
-    // Engine cut-off queries
-    if (lower.contains('engine') || lower.contains('immobilizer') || lower.contains('cut off') || lower.contains('cutoff')) {
-      if (useHindi) {
-        return '🔒 Remote Engine Immobilizer:\n\n'
-            'Yeh feature theft attempt ke dauran vehicle ignition signal ko remotely disable karne ke liye use hota hai. Aap ise Anti-Theft Screen se 1-click mein On ya Off kar sakte hain.';
-      } else {
-        return '🔒 Remote Engine Immobilizer:\n\n'
-            'This feature allows you to remotely cut-off the vehicle ignition/fuel signal in case of unauthorized movement. You can toggle this on or off with 1 tap from the Anti-Theft screen.';
-      }
-    }
-
-    // GPS accuracy queries
-    if (lower.contains('gps') || lower.contains('accuracy') || lower.contains('location') || lower.contains('track')) {
-      if (useHindi) {
-        return '📍 GPS Tracking Tips:\n\n'
-            '• Phone Settings mein Location Permission ko "Allow all the time" par rakhein.\n'
-            '• Battery optimization disable karein taaki background mein GPS drop na ho.\n'
-            '• Settings mein jaakar GPS frequency High Accuracy mode par set karein.';
-      } else {
-        return '📍 GPS Tracking Optimization:\n\n'
-            '• Ensure location permissions are set to **"Allow all the time"** in your phone settings.\n'
-            '• Disable battery optimization for RaahMilo to keep GPS active in background.\n'
-            '• Set GPS Accuracy to **"High Accuracy"** in the Settings screen for 1–3 meter precision.';
-      }
-    }
-
-    // Default response
-    if (useHindi) {
-      return 'Main samajh gaya. RaahMilo aapke vehicle ki safety ke liye 24x7 tayar hai. Aap Anti-Theft, Alarm, Geofence, ya Live Map ke bare mein pooch sakte hain. Agar koi technical samasya hai, toh batayein aur main turant Support Desk ko alert bhej doonga!';
-    } else {
-      return 'Understood! RaahMilo is ready 24/7 to keep your vehicle secure. You can ask about Anti-Theft, Siren Alarms, Live Map Tracking, or Geofencing. If you are experiencing any technical issue, let me know and I will immediately escalate it to our Support Team.';
-    }
-  }
 
   void _showReportIssueModal() {
     final titleController = TextEditingController();
@@ -759,19 +699,25 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
                           border: InputBorder.none,
                           contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
                         ),
-                        onSubmitted: (_) => _handleSendMessage(),
+                        onSubmitted: (_isSending || _isTyping) ? null : (_) => _handleSendMessage(),
                       ),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Container(
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
+                    decoration: BoxDecoration(
+                      color: (_isSending || _isTyping) ? AppColors.textMuted : AppColors.primary,
                       shape: BoxShape.circle,
                     ),
                     child: IconButton(
-                      icon: const Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                      onPressed: () => _handleSendMessage(),
+                      icon: _isSending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                      onPressed: (_isSending || _isTyping) ? null : () => _handleSendMessage(),
                     ),
                   ),
                 ],

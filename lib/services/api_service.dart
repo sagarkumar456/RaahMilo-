@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'ai_human_engine.dart';
 
 class ApiLogEntry {
   final String id;
@@ -88,7 +89,25 @@ class ApiService extends ChangeNotifier {
           } catch (_) {}
         }
       }
+      final savedGeminiKey = prefs.getString('raahmilo_gemini_api_key');
+      if (savedGeminiKey != null && savedGeminiKey.isNotEmpty) {
+        _geminiApiKey = savedGeminiKey;
+      }
     } catch (_) {}
+  }
+
+  String? _geminiApiKey;
+  String? get geminiApiKey => _geminiApiKey;
+
+  Future<void> setGeminiApiKey(String? key) async {
+    _geminiApiKey = key?.trim();
+    final prefs = await SharedPreferences.getInstance();
+    if (_geminiApiKey == null || _geminiApiKey!.isEmpty) {
+      await prefs.remove('raahmilo_gemini_api_key');
+    } else {
+      await prefs.setString('raahmilo_gemini_api_key', _geminiApiKey!);
+    }
+    notifyListeners();
   }
 
   Future<void> setBaseUrl(String url) async {
@@ -328,25 +347,115 @@ class ApiService extends ChangeNotifier {
   // AI SUPPORT & HELP APIS
   // ==========================================
 
-  /// Call API to chat with RaahMilo AI Bot
+  /// Call API to chat with RaahMilo Human AI Bot
   Future<Map<String, dynamic>> sendAiChatMessage({
     required String message,
     required List<Map<String, String>> chatHistory,
     String? userEmail,
+    String? ticketId,
+    bool useHindi = false,
   }) async {
-    final response = await _callEndpoint(
-      method: 'POST',
-      endpoint: '/support/ai-chat',
-      body: {
-        'message': message,
-        'history': chatHistory,
-        'userEmail': userEmail ?? 'Anonymous User',
-        'timestamp': DateTime.now().toIso8601String(),
-      },
+    // 1. If Gemini Free API key is configured, call Google Gemini 1.5 Flash directly
+    if (_geminiApiKey != null && _geminiApiKey!.isNotEmpty) {
+      try {
+        final geminiUri = Uri.parse(
+          'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$_geminiApiKey',
+        );
+
+        final contents = chatHistory.take(6).map((h) {
+          final role = h['role'] == 'user' ? 'user' : 'model';
+          return {
+            'role': role,
+            'parts': [
+              {'text': h['content'] ?? ''}
+            ],
+          };
+        }).toList();
+
+        contents.add({
+          'role': 'user',
+          'parts': [
+            {'text': message}
+          ],
+        });
+
+        final geminiRes = await http.post(
+          geminiUri,
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'system_instruction': {
+              'parts': [
+                {
+                  'text': 'You are RaahMilo\'s friendly, caring, and helpful human customer support executive. '
+                      'You talk naturally, warmly, and conversationally like a human friend in ${useHindi ? "Hindi / Hinglish" : "English"}. '
+                      'You help users keep their vehicles secure, understand Anti-Theft shield, parking mode, siren alarms, engine cut-off, and GPS live tracking. '
+                      'Address the user warmly. Keep responses friendly, helpful, reassuring, and concise with helpful emojis.'
+                }
+              ]
+            },
+            'contents': contents,
+          }),
+        ).timeout(const Duration(seconds: 8));
+
+        if (geminiRes.statusCode == 200) {
+          final data = jsonDecode(geminiRes.body);
+          final candidates = data['candidates'] as List?;
+          if (candidates != null && candidates.isNotEmpty) {
+            final parts = candidates[0]['content']?['parts'] as List?;
+            if (parts != null && parts.isNotEmpty) {
+              final aiText = parts[0]['text']?.toString().trim();
+              if (aiText != null && aiText.isNotEmpty) {
+                return {
+                  'status': 'success',
+                  'reply': aiText,
+                  'engine': 'gemini-1.5-flash',
+                };
+              }
+            }
+          }
+        }
+      } catch (_) {
+        // Fall back gracefully to backend or human engine
+      }
+    }
+
+    // 2. Call backend server endpoint
+    try {
+      final backendRes = await _callEndpoint(
+        method: 'POST',
+        endpoint: '/support/ai-chat',
+        body: {
+          'message': message,
+          'history': chatHistory,
+          'userEmail': userEmail ?? 'Anonymous User',
+          'useHindi': useHindi,
+          'ticketId': ticketId,
+          'timestamp': DateTime.now().toIso8601String(),
+        },
+      );
+
+      final reply = backendRes['reply']?.toString();
+      if (reply != null && reply.isNotEmpty && !reply.startsWith('Processed successfully')) {
+        return backendRes;
+      }
+    } catch (_) {}
+
+    // 3. Empathetic Human Conversational Engine Fallback (100% Free & Works Offline!)
+    final humanReply = AiHumanEngine.generateHumanResponse(
+      message,
+      ticketId: ticketId,
+      useHindi: useHindi,
     );
 
-    return response;
+    return {
+      'status': 'success',
+      'reply': humanReply,
+      'engine': 'human-conversational-engine',
+    };
   }
+
+  DateTime? _lastAlertDispatchTime;
+  Map<String, dynamic>? _lastAlertCachedResult;
 
   /// Call API to escalate issue and dispatch email alert to skdas1641999@gmail.com
   Future<Map<String, dynamic>> sendSupportIssueAlert({
@@ -355,7 +464,19 @@ class ApiService extends ChangeNotifier {
     required String issueDescription,
     String priority = 'HIGH',
     Map<String, dynamic>? telemetry,
+    bool forceSend = false,
   }) async {
+    // Rate-limiting & deduplication guard: prevent sending multiple emails within 15 seconds
+    if (!forceSend && _lastAlertDispatchTime != null && _lastAlertCachedResult != null) {
+      final diffSec = DateTime.now().difference(_lastAlertDispatchTime!).inSeconds;
+      if (diffSec < 15) {
+        return {
+          ..._lastAlertCachedResult!,
+          'deduplicated': true,
+        };
+      }
+    }
+
     final ticketId = 'RM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
 
     // 1. Call standard backend API endpoint
@@ -391,7 +512,6 @@ class ApiService extends ChangeNotifier {
         },
         body: jsonEncode({
           '_subject': '🚨 [Team RaahMilo] Support Alert [Ticket #$ticketId]',
-          '_cc': adminEmail,
           '_captcha': 'false',
           '_template': 'table',
           'Security System': 'RaahMilo Anti-Theft & Defense Desk',
@@ -446,7 +566,7 @@ class ApiService extends ChangeNotifier {
       );
     }
 
-    return {
+    final finalResult = {
       ...apiResult,
       'ticketId': ticketId,
       'targetEmail': targetSupportEmail,
@@ -454,6 +574,11 @@ class ApiService extends ChangeNotifier {
       'mailDelivered': mailSuccess,
       'mailMessage': mailMessage,
     };
+
+    _lastAlertDispatchTime = DateTime.now();
+    _lastAlertCachedResult = finalResult;
+
+    return finalResult;
   }
 
   // ==========================================

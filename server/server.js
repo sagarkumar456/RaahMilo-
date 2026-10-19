@@ -170,29 +170,90 @@ app.get('/api/vehicles/:id/security-status', (req, res) => {
 // -------------------------------------------------------------
 // 3. AI SUPPORT CHATBOT ENDPOINT
 // -------------------------------------------------------------
-app.post('/api/support/ai-chat', (req, res) => {
-  const { message, history, userEmail } = req.body || {};
+app.post('/api/support/ai-chat', async (req, res) => {
+  const { message, history, userEmail, useHindi } = req.body || {};
   const q = (message || '').toLowerCase();
 
+  // 1. If GEMINI_API_KEY is configured in server .env, query Gemini 1.5 Flash directly
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+      const contents = (history || []).slice(-6).map((h) => ({
+        role: h.role === 'user' ? 'user' : 'model',
+        parts: [{ text: h.content || '' }],
+      }));
+      contents.push({ role: 'user', parts: [{ text: message || '' }] });
+
+      const geminiResponse = await fetch(geminiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: {
+            parts: [
+              {
+                text: `You are RaahMilo's friendly and caring human customer support executive. Talk warmly, naturally, and conversationally like a human friend in ${useHindi ? 'Hindi / Hinglish' : 'English'}. Help with vehicle security, anti-theft, parking guard, siren alarms, engine cut-off, and GPS tracking. Keep replies concise and reassuring with emojis.`,
+              },
+            ],
+          },
+          contents,
+        }),
+      });
+
+      if (geminiResponse.ok) {
+        const geminiData = await geminiResponse.json();
+        const generatedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (generatedText) {
+          return res.json({
+            reply: generatedText.trim(),
+            engine: 'gemini-1.5-flash',
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+    } catch (e) {
+      console.error('[RaahMilo AI Server] Gemini error:', e.message);
+    }
+  }
+
+  // 2. Human-like conversational response fallback
   let botReply = '';
   let autoEscalate = false;
 
-  if (q.includes('theft') || q.includes('chori') || q.includes('stolen') || q.includes('emergency')) {
-    botReply = '🚨 EMERGENCY DETECTED: Tap "EMERGENCY CUTOFF" or sound the Siren Alarm immediately from your Anti-Theft shield. We have alerted the security desk.';
+  if (q.includes('theft') || q.includes('chori') || q.includes('stolen') || q.includes('dar')) {
+    botReply = useHindi
+      ? 'Arey bhai, aap bilkul tension mat lijiye! RaahMilo ka Anti-Theft shield isi ke liye bana hai. Aap Anti-Theft tab me jakar "Arm Vehicle" dabayein. Agar koi 1 meter bhi gaadi chhuega toh zordar siren bajega aur alert aa jayega! 🛡️'
+      : 'Please take a deep breath and relax! RaahMilo\'s Anti-Theft shield was built to protect against theft. Tap "ARM VEHICLE" in the Anti-Theft tab. If anyone touches your vehicle, a loud siren sounds immediately! 🛡️';
     autoEscalate = true;
+  } else if (q.includes('kaise ho') || q.includes('hello') || q.includes('hi') || q.includes('namaste')) {
+    botReply = useHindi
+      ? 'Namaste bhai! 👋 Main bilkul badiya hoon, aap bataiye kaise hain? Main RaahMilo se aapka dost hoon. Aapki bike ya gaadi ki security me main kya madad kar sakta hoon?'
+      : 'Hello there! 👋 I am doing great, thank you for asking! I am your RaahMilo security companion. How can I help protect your vehicle today?';
+  } else if (q.includes('free') || q.includes('paisa') || q.includes('charge') || q.includes('cost')) {
+    botReply = useHindi
+      ? 'Haanji bhai, RaahMilo app, iska live GPS tracking, aur Anti-Theft alerts aapke liye 100% bilkul FREE hain! Koi hidden fees nahi hai, aap maze se use kijiye! 🎉'
+      : 'Yes, absolutely! The RaahMilo app, real-time GPS tracking, and Anti-Theft alerts are 100% completely FREE to use! 🎉';
   } else if (q.includes('arm') || q.includes('lock') || q.includes('suraksha')) {
-    botReply = 'To arm your vehicle, go to the Anti-Theft tab and tap "ARM VEHICLE". Your vehicle will be locked to its current GPS position with motion detection enabled.';
-  } else if (q.includes('alarm') || q.includes('siren') || q.includes('sound')) {
-    botReply = 'You can silence an active alarm anytime by tapping "SILENCE ALARM" on the Anti-Theft screen or the emergency banner at the top of your screen.';
+    botReply = useHindi
+      ? 'Gaadi lock karna bohot simple hai! Anti-Theft tab me jayein aur "ARM VEHICLE" button dabayein. Gaadi ka GPS anchor point lock ho jayega.'
+      : 'Arming your vehicle is super simple! Go to the Anti-Theft tab and tap "ARM VEHICLE". Your vehicle\'s position will be anchored with active motion detection.';
+  } else if (q.includes('alarm') || q.includes('siren') || q.includes('sound') || q.includes('baj raha')) {
+    botReply = useHindi
+      ? 'Alarm band karne ke liye Anti-Theft screen par "Silence Alarm" button ya upar red emergency banner par "Silence" dabayein. Siren turant chup ho jayega!'
+      : 'You can silence an active alarm anytime by tapping "Silence Siren" on the Anti-Theft screen or top emergency banner.';
   } else if (q.includes('contact') || q.includes('support') || q.includes('help') || q.includes('madad')) {
-    botReply = 'Our support desk is active 24/7. Any critical query or technical issue reported here is immediately routed to our security operations desk.';
+    botReply = useHindi
+      ? 'Humari support desk 24x7 active hai bhai! Aapki koi bhi pareshani ho, batayein aur humari technical team turant action legi.'
+      : 'Our support desk is active 24/7! Any issue you mention here is immediately escalated to our operations team.';
   } else {
-    botReply = 'Hello! I am your RaahMilo Security Assistant. I can help you with vehicle arming, live GPS tracking, alarm controls, sensitivity settings, and incident escalations. How may I assist you?';
+    botReply = useHindi
+      ? 'Main samajh gaya dost! 😊 Main aapki gaadi ki suraksha me poori madad karne ke liye yahan hoon. Aap Anti-Theft, Alarm, GPS live tracking ya kisi bhi cheez ke baare me poochh sakte hain!'
+      : 'I hear you! 😊 I am right here to help you with vehicle security, Anti-Theft protection, siren alarms, or live GPS tracking. Feel free to ask anything!';
   }
 
   res.json({
     reply: botReply,
     autoEscalate,
+    engine: 'human-conversational-engine',
     userEmail: userEmail || 'Anonymous',
     timestamp: new Date().toISOString(),
   });
