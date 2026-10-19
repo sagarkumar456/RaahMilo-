@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../core/app_colors.dart';
 import '../models/trip_model.dart';
+import '../models/vehicle_type.dart';
 import '../services/tracking_service.dart';
+import '../widgets/map_calendar_bar.dart';
+import '../widgets/map_vehicle_filter_bar.dart';
 import '../widgets/trip_route_painter.dart';
 import 'trip_details_screen.dart';
 
@@ -14,6 +18,8 @@ class TripHistoryScreen extends StatefulWidget {
 
 class _TripHistoryScreenState extends State<TripHistoryScreen> {
   String _selectedFilter = 'All';
+  DateTime? _specificDate;
+  VehicleType? _selectedVehicle;
   final List<String> _filters = ['All', 'Today', 'This Week', 'This Month'];
 
   @override
@@ -23,9 +29,20 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
   }
 
   List<TripModel> _filterTrips(List<TripModel> allTrips) {
-    if (_selectedFilter == 'All') return allTrips;
+    var list = allTrips;
+    if (_selectedVehicle != null) {
+      list = list.where((t) => t.vehicleTypeEnum == _selectedVehicle).toList();
+    }
+    if (_specificDate != null) {
+      return list.where((t) =>
+        t.startedAt.year == _specificDate!.year &&
+        t.startedAt.month == _specificDate!.month &&
+        t.startedAt.day == _specificDate!.day
+      ).toList();
+    }
+    if (_selectedFilter == 'All') return list;
     final now = DateTime.now();
-    return allTrips.where((t) {
+    return list.where((t) {
       final diff = now.difference(t.startedAt);
       if (_selectedFilter == 'Today') {
         return diff.inHours < 24 && t.startedAt.day == now.day;
@@ -36,6 +53,25 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
       }
       return true;
     }).toList();
+  }
+
+  void _openCalendarPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => MapMonthlyCalendarSheet(
+        initialDate: _specificDate ?? DateTime.now(),
+        vehicleFilter: _selectedVehicle,
+        onDateSelected: (date) {
+          Navigator.pop(context);
+          setState(() {
+            _specificDate = date;
+            _selectedFilter = DateFormat('dd MMM').format(date);
+          });
+        },
+      ),
+    );
   }
 
   @override
@@ -56,15 +92,9 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                 onPressed: () => trackingService.loadHistory(),
               ),
               IconButton(
-                icon: const Icon(Icons.calendar_today_outlined, size: 20),
-                onPressed: () {
-                  showDatePicker(
-                    context: context,
-                    initialDate: DateTime.now(),
-                    firstDate: DateTime(2024),
-                    lastDate: DateTime.now(),
-                  );
-                },
+                icon: const Icon(Icons.calendar_month_rounded, size: 22, color: AppColors.primary),
+                tooltip: 'View Calendar with KM',
+                onPressed: _openCalendarPicker,
               ),
             ],
           ),
@@ -74,38 +104,82 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
             child: Column(
               children: [
                 const SizedBox(height: 8),
-                // Filter pills row
+                // Vehicle Mode Filter Bar
+                MapVehicleFilterBar(
+                  selectedVehicle: _selectedVehicle ?? VehicleType.car,
+                  showAllOption: true,
+                  isAllSelected: _selectedVehicle == null,
+                  onAllSelected: () => setState(() => _selectedVehicle = null),
+                  onVehicleSelected: (v) => setState(() => _selectedVehicle = v),
+                ),
+                const SizedBox(height: 10),
+                // Time Range Filter Pills Row
                 SizedBox(
                   height: 38,
-                  child: ListView.separated(
+                  child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     scrollDirection: Axis.horizontal,
-                    itemCount: _filters.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 8),
-                    itemBuilder: (context, index) {
-                      final filter = _filters[index];
-                      final isSelected = filter == _selectedFilter;
-                      return GestureDetector(
-                        onTap: () => setState(() => _selectedFilter = filter),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: isSelected ? AppColors.primary : AppColors.tileBackground,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Center(
-                            child: Text(
-                              filter,
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                color: isSelected ? Colors.white : AppColors.textSecondary,
-                              ),
+                    children: [
+                      if (_specificDate != null) ...[
+                        GestureDetector(
+                          onTap: () => setState(() {
+                            _specificDate = null;
+                            _selectedFilter = 'All';
+                          }),
+                          child: Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  DateFormat('dd MMM').format(_specificDate!),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(Icons.close, size: 14, color: Colors.white),
+                              ],
                             ),
                           ),
                         ),
-                      );
-                    },
+                      ],
+                      ..._filters.map((filter) {
+                        final isSelected = _specificDate == null && filter == _selectedFilter;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: GestureDetector(
+                            onTap: () => setState(() {
+                              _specificDate = null;
+                              _selectedFilter = filter;
+                            }),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isSelected ? AppColors.primary : AppColors.tileBackground,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  filter,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                    color: isSelected ? Colors.white : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -239,13 +313,42 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                         color: AppColors.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 3),
-                    Text(
-                      trip.formattedDate,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: trip.vehicleTypeEnum.color.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(trip.vehicleTypeEnum.icon, size: 12, color: trip.vehicleTypeEnum.color),
+                              const SizedBox(width: 4),
+                              Text(
+                                trip.vehicleTypeEnum.displayName,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: trip.vehicleTypeEnum.color,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            trip.formattedDate,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(

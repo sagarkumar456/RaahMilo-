@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'vehicle_type.dart';
 
 class TripPoint {
   final double latitude;
@@ -70,6 +71,7 @@ class TripModel {
   final double distanceMeters;
   final bool isActive;
   final List<TripPoint> points;
+  final String vehicleType; // 'car', 'human', 'scooty', 'bike'
 
   TripModel({
     required this.id,
@@ -81,7 +83,10 @@ class TripModel {
     required this.distanceMeters,
     required this.isActive,
     this.points = const [],
+    this.vehicleType = 'car',
   });
+
+  VehicleType get vehicleTypeEnum => VehicleType.fromString(vehicleType);
 
   String get formattedDistance {
     final km = distanceMeters / 1000.0;
@@ -124,6 +129,7 @@ class TripModel {
     'distanceMeters': distanceMeters,
     'active': isActive,
     'points': points.map((p) => p.toJson()).toList(),
+    'vehicleType': vehicleType,
   };
 
   factory TripModel.fromJson(Map<String, dynamic> json) {
@@ -144,6 +150,7 @@ class TripModel {
       points: rawPoints
           .map((p) => TripPoint.fromJson(p as Map<String, dynamic>))
           .toList(),
+      vehicleType: json['vehicleType'] as String? ?? 'car',
     );
   }
 
@@ -176,6 +183,7 @@ class TripModel {
       distanceMeters: (data['distanceMeters'] as num?)?.toDouble() ?? 0.0,
       isActive: data['active'] as bool? ?? false,
       points: points,
+      vehicleType: data['vehicleType'] as String? ?? 'car',
     );
   }
 
@@ -189,6 +197,7 @@ class TripModel {
     double? distanceMeters,
     bool? isActive,
     List<TripPoint>? points,
+    String? vehicleType,
   }) {
     return TripModel(
       id: id ?? this.id,
@@ -200,6 +209,7 @@ class TripModel {
       distanceMeters: distanceMeters ?? this.distanceMeters,
       isActive: isActive ?? this.isActive,
       points: points ?? this.points,
+      vehicleType: vehicleType ?? this.vehicleType,
     );
   }
 }

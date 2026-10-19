@@ -2,14 +2,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:intl/intl.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
+import '../models/trip_model.dart';
+import '../models/vehicle_type.dart';
 import '../services/geocoding_service.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
+import '../widgets/map_calendar_bar.dart';
 import '../widgets/pulse_indicator.dart';
+import '../widgets/vehicle_marker_widget.dart';
 import 'location_disabled_screen.dart';
 import 'tracking_details_sheet.dart';
+import 'trip_details_screen.dart';
 
 class LiveMapScreen extends StatefulWidget {
   const LiveMapScreen({super.key});
@@ -24,6 +30,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   bool _isLocationEnabled = true;
   bool _isSheetCollapsed = false;
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
+
+  DateTime _selectedDate = DateTime.now();
+  bool _isViewingHistoryDate = false;
 
   static const ll.LatLng _defaultCoord = ll.LatLng(20.5937, 78.9629); // India center fallback until GPS is acquired
 
@@ -105,6 +114,72 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     setState(() => _isSatellite = !_isSatellite);
   }
 
+  void _onDateSelected(DateTime date) {
+    setState(() {
+      _selectedDate = date;
+      _isViewingHistoryDate = true;
+    });
+    final trips = trackingService.getTripsForDate(
+      date,
+      vehicleFilter: trackingService.currentVehicle,
+    );
+    final pts = <ll.LatLng>[];
+    for (final t in trips) {
+      for (final p in t.points) {
+        pts.add(ll.LatLng(p.latitude, p.longitude));
+      }
+    }
+    if (pts.isNotEmpty) {
+      _fitRouteBounds(pts);
+    }
+  }
+
+  void _onLiveTapped() {
+    setState(() {
+      _isViewingHistoryDate = false;
+    });
+    _recenter();
+  }
+
+  void _onVehicleSelected(VehicleType type) {
+    trackingService.setVehicleType(type);
+    if (_isViewingHistoryDate) {
+      final trips = trackingService.getTripsForDate(
+        _selectedDate,
+        vehicleFilter: type,
+      );
+      final pts = <ll.LatLng>[];
+      for (final t in trips) {
+        for (final p in t.points) {
+          pts.add(ll.LatLng(p.latitude, p.longitude));
+        }
+      }
+      if (pts.isNotEmpty) {
+        _fitRouteBounds(pts);
+      }
+    }
+  }
+
+  void _fitRouteBounds(List<ll.LatLng> points) {
+    if (points.isEmpty) return;
+    if (points.length == 1) {
+      _mapController.move(points.first, 15.5);
+      return;
+    }
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+    for (final p in points) {
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
+      if (p.longitude < minLng) minLng = p.longitude;
+      if (p.longitude > maxLng) maxLng = p.longitude;
+    }
+    final center = ll.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+    _mapController.move(center, 14.5);
+  }
+
   Future<void> _toggleTracking(bool isActive) async {
     try {
       if (isActive) {
@@ -183,6 +258,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
         final pos = trackingService.current;
         final currentCoord = pos != null ? ll.LatLng(pos.latitude, pos.longitude) : _defaultCoord;
         final isActive = trackingService.active;
+        final currentVehicle = trackingService.currentVehicle;
 
         final hasRoute = trackingService.points.length >= 2;
         final routePoints = trackingService.points
@@ -197,9 +273,124 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
             : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
+        // Prepare polylines and markers depending on mode
+        final List<Polyline> polylines = [];
+        final List<Marker> markers = [];
+        final List<Marker> arrowMarkers = [];
+
+        final dayTrips = trackingService.getTripsForDate(
+          _selectedDate,
+          vehicleFilter: currentVehicle,
+        );
+
+        if (_isViewingHistoryDate) {
+          for (final trip in dayTrips) {
+            final tPoints = trip.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
+            if (tPoints.isNotEmpty) {
+              if (tPoints.length >= 2) {
+                polylines.add(
+                  Polyline(
+                    points: tPoints,
+                    strokeWidth: 5.0,
+                    color: trip.vehicleTypeEnum.color,
+                  ),
+                );
+                arrowMarkers.addAll(buildDirectionalArrowMarkers(tPoints));
+              }
+              // Start Marker
+              markers.add(
+                Marker(
+                  point: tPoints.first,
+                  width: 36,
+                  height: 36,
+                  alignment: Alignment.topCenter,
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: AppColors.success,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
+                      ],
+                    ),
+                    child: const Icon(Icons.trip_origin_rounded, color: Colors.white, size: 20),
+                  ),
+                ),
+              );
+              // End Marker with 3D Vehicle
+              markers.add(
+                Marker(
+                  point: tPoints.last,
+                  width: 70,
+                  height: 70,
+                  alignment: Alignment.center,
+                  child: VehicleMarkerWidget(
+                    vehicleType: trip.vehicleTypeEnum,
+                    isLive: false,
+                    size: 54.0,
+                    speedText: trip.avgSpeedKmh > 0 ? '${trip.avgSpeedKmh.toStringAsFixed(0)} km/h' : null,
+                  ),
+                ),
+              );
+            }
+          }
+        } else {
+          // Live tracking mode
+          if (hasRoute) {
+            polylines.add(
+              Polyline(
+                points: routePoints,
+                strokeWidth: 5.0,
+                color: currentVehicle.color,
+              ),
+            );
+            arrowMarkers.addAll(buildDirectionalArrowMarkers(routePoints));
+          }
+          if (trackingService.points.isNotEmpty) {
+            markers.add(
+              Marker(
+                point: routePoints.first,
+                width: 38,
+                height: 38,
+                alignment: Alignment.topCenter,
+                child: const Icon(
+                  Icons.location_on_rounded,
+                  color: AppColors.primary,
+                  size: 38,
+                ),
+              ),
+            );
+          }
+          if (pos != null) {
+            markers.add(
+              Marker(
+                point: currentCoord,
+                width: 76,
+                height: 76,
+                alignment: Alignment.center,
+                child: VehicleMarkerWidget(
+                  vehicleType: currentVehicle,
+                  speedText: '$speedKmh km/h',
+                  isLive: isActive,
+                  size: 58.0,
+                ),
+              ),
+            );
+          }
+        }
+
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Live Tracking'),
+            title: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _isViewingHistoryDate ? 'History' : 'Live Map',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                ),
+                const SizedBox(width: 8),
+                _buildVehicleFilterDropdown(currentVehicle),
+              ],
+            ),
             actions: [
               IconButton(
                 icon: Icon(_isSatellite ? Icons.map_outlined : Icons.layers_outlined),
@@ -230,83 +421,51 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                     userAgentPackageName: 'com.trackmyphone.gps',
                   ),
 
-                  // Route Polyline (ONLY if user has actually moved/recorded points)
-                  if (hasRoute)
+                  // Route Polyline
+                  if (polylines.isNotEmpty)
                     PolylineLayer(
-                      polylines: [
-                        Polyline(
-                          points: routePoints,
-                          strokeWidth: 5.0,
-                          color: AppColors.primary,
-                        ),
-                      ],
+                      polylines: polylines,
                     ),
 
                   // Directional Arrow Badges along the path
-                  if (hasRoute)
+                  if (arrowMarkers.isNotEmpty)
                     MarkerLayer(
-                      markers: buildDirectionalArrowMarkers(routePoints),
+                      markers: arrowMarkers,
                     ),
 
-                  // Markers Layer: Start Point + Moving Vehicle
-                  MarkerLayer(
-                    markers: [
-                      // Start Marker (Green Pin) - only if points exist
-                      if (trackingService.points.isNotEmpty)
-                        Marker(
-                          point: routePoints.first,
-                          width: 40,
-                          height: 40,
-                          alignment: Alignment.topCenter,
-                          child: const Icon(
-                            Icons.location_on_rounded,
-                            color: AppColors.primary,
-                            size: 38,
-                          ),
-                        ),
-                      // Vehicle / Current Position Marker
-                      if (pos != null)
-                        Marker(
-                          point: currentCoord,
-                          width: 50,
-                          height: 50,
-                          alignment: Alignment.center,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 3),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: AppColors.primary.withValues(alpha: 0.4),
-                                  blurRadius: 10,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                            child: const Center(
-                              child: Icon(
-                                Icons.my_location_rounded,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
+                  // Markers Layer: Start Point + Vehicle / Current Position
+                  if (markers.isNotEmpty)
+                    MarkerLayer(
+                      markers: markers,
+                    ),
                 ],
               ),
 
-              // 2. Right Zoom Controls (+ / -)
+              // 2. Right Side Action Controls: Calendar (Date & KM) + Zoom (+/-)
               Positioned(
                 right: 16,
                 top: 20,
                 child: Column(
                   children: [
-                    _floatingCircleButton(icon: Icons.add, onTap: _zoomIn),
+                    // Small Calendar Icon on right side of map
+                    _floatingCircleButton(
+                      icon: Icons.calendar_month_rounded,
+                      iconColor: AppColors.primary,
+                      tooltip: 'Calendar & KM History',
+                      onTap: _openCalendarSheet,
+                    ),
+                    const SizedBox(height: 10),
+                    _floatingCircleButton(
+                      icon: Icons.add,
+                      tooltip: 'Zoom In',
+                      onTap: _zoomIn,
+                    ),
                     const SizedBox(height: 8),
-                    _floatingCircleButton(icon: Icons.remove, onTap: _zoomOut),
+                    _floatingCircleButton(
+                      icon: Icons.remove,
+                      tooltip: 'Zoom Out',
+                      onTap: _zoomOut,
+                    ),
                   ],
                 ),
               ),
@@ -365,53 +524,231 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
                   ),
                 ),
 
-              // 3. Floating Bottom Card (Collapsible / Swipeable for full map visibility)
+              // 5. Floating Bottom Card (History Day Summary or Live Tracking Card)
               Positioned(
                 bottom: 12,
                 left: 16,
                 right: 16,
-                child: GestureDetector(
-                  onVerticalDragEnd: (details) {
-                    if (details.primaryVelocity != null) {
-                      if (details.primaryVelocity! > 60) {
-                        // Swiped Down -> Minimize/Collapse
-                        setState(() => _isSheetCollapsed = true);
-                      } else if (details.primaryVelocity! < -60) {
-                        // Swiped Up -> Expand
-                        setState(() => _isSheetCollapsed = false);
-                      }
-                    }
-                  },
-                  onHorizontalDragEnd: (details) {
-                    if (details.primaryVelocity != null && details.primaryVelocity!.abs() > 60) {
-                      // Swiped Side (Left or Right) -> Toggle
-                      setState(() => _isSheetCollapsed = !_isSheetCollapsed);
-                    }
-                  },
-                  child: AnimatedCrossFade(
-                    duration: const Duration(milliseconds: 250),
-                    firstCurve: Curves.easeInOutCubic,
-                    secondCurve: Curves.easeInOutCubic,
-                    crossFadeState: _isSheetCollapsed
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                    firstChild: _buildExpandedCard(
-                      isActive: isActive,
-                      speedKmh: speedKmh,
-                      pos: pos,
-                    ),
-                    secondChild: _buildCollapsedCard(
-                      isActive: isActive,
-                      speedKmh: speedKmh,
-                      pos: pos,
-                    ),
-                  ),
-                ),
+                child: _isViewingHistoryDate
+                    ? _buildHistoryDaySummaryCard(dayTrips)
+                    : GestureDetector(
+                        onVerticalDragEnd: (details) {
+                          if (details.primaryVelocity != null) {
+                            if (details.primaryVelocity! > 60) {
+                              setState(() => _isSheetCollapsed = true);
+                            } else if (details.primaryVelocity! < -60) {
+                              setState(() => _isSheetCollapsed = false);
+                            }
+                          }
+                        },
+                        onHorizontalDragEnd: (details) {
+                          if (details.primaryVelocity != null && details.primaryVelocity!.abs() > 60) {
+                            setState(() => _isSheetCollapsed = !_isSheetCollapsed);
+                          }
+                        },
+                        child: AnimatedCrossFade(
+                          duration: const Duration(milliseconds: 250),
+                          firstCurve: Curves.easeInOutCubic,
+                          secondCurve: Curves.easeInOutCubic,
+                          crossFadeState: _isSheetCollapsed
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
+                          firstChild: _buildExpandedCard(
+                            isActive: isActive,
+                            speedKmh: speedKmh,
+                            pos: pos,
+                          ),
+                          secondChild: _buildCollapsedCard(
+                            isActive: isActive,
+                            speedKmh: speedKmh,
+                            pos: pos,
+                          ),
+                        ),
+                      ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildHistoryDaySummaryCard(List<TripModel> dayTrips) {
+    final vehicle = trackingService.currentVehicle;
+    double totalMeters = 0.0;
+    int totalMinutes = 0;
+    for (final t in dayTrips) {
+      totalMeters += t.distanceMeters;
+      final end = t.endedAt ?? t.startedAt;
+      totalMinutes += end.difference(t.startedAt).inMinutes;
+    }
+    final km = totalMeters / 1000.0;
+    final kmStr = '${km.toStringAsFixed(1)} km';
+    final durationStr = totalMinutes >= 60
+        ? '${totalMinutes ~/ 60} hr ${totalMinutes % 60} min'
+        : '$totalMinutes min';
+    final dateStr = DateFormat('EEEE, dd MMM yyyy').format(_selectedDate);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.16),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: vehicle.color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(vehicle.icon, color: vehicle.color, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      dateStr,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      dayTrips.isEmpty
+                          ? 'No ${vehicle.displayName} trips recorded on this day'
+                          : '${dayTrips.length} ${dayTrips.length == 1 ? "Trip" : "Trips"} recorded • ${vehicle.displayName}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+                tooltip: 'Return to Live Map',
+                onPressed: _onLiveTapped,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.tileBackground,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildStatItem('Distance', kmStr, Icons.straighten_rounded, vehicle.color),
+                _buildStatItem('Duration', durationStr, Icons.access_time_rounded, AppColors.navyDark),
+                _buildStatItem(
+                  'Avg Speed',
+                  dayTrips.isNotEmpty ? '${dayTrips.first.avgSpeedKmh.toStringAsFixed(0)} km/h' : '0 km/h',
+                  Icons.speed_rounded,
+                  AppColors.primary,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (dayTrips.isNotEmpty)
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
+                    label: const Text('View Trip'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.primary,
+                      side: const BorderSide(color: AppColors.primary, width: 1.2),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TripDetailsScreen(trip: dayTrips.first),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              if (dayTrips.isNotEmpty) const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton.icon(
+                  icon: const Icon(Icons.my_location_rounded, size: 18),
+                  label: const Text('Live Map'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  onPressed: _onLiveTapped,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, String value, IconData icon, Color color) {
+    return Column(
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: color),
+            const SizedBox(width: 4),
+            Text(
+              value,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+        ),
+      ],
     );
   }
 
@@ -738,25 +1075,120 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
     );
   }
 
-  Widget _floatingCircleButton({required IconData icon, required VoidCallback onTap}) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
+  Widget _buildVehicleFilterDropdown(VehicleType currentVehicle) {
+    return PopupMenuButton<VehicleType>(
+      initialValue: currentVehicle,
+      tooltip: 'Filter Vehicle (Car, Human, Scooty, Bike)',
+      onSelected: _onVehicleSelected,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 8,
+      offset: const Offset(0, 36),
+      itemBuilder: (context) => [
+        VehicleType.car,
+        VehicleType.human,
+        VehicleType.scooty,
+        VehicleType.bike,
+      ].map((v) {
+        final isSelected = v == currentVehicle;
+        return PopupMenuItem<VehicleType>(
+          value: v,
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: v.color.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(v.icon, color: v.color, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                v.displayName,
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                  color: isSelected ? v.color : AppColors.textPrimary,
+                ),
+              ),
+              if (isSelected) ...[
+                const Spacer(),
+                Icon(Icons.check_rounded, color: v.color, size: 18),
+              ],
+            ],
+          ),
+        );
+      }).toList(),
       child: Container(
-        width: 44,
-        height: 44,
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.15),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
+          color: currentVehicle.color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: currentVehicle.color.withValues(alpha: 0.35), width: 1.2),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(currentVehicle.icon, color: currentVehicle.color, size: 16),
+            const SizedBox(width: 5),
+            Text(
+              currentVehicle.displayName,
+              style: TextStyle(
+                color: currentVehicle.color,
+                fontWeight: FontWeight.bold,
+                fontSize: 12.5,
+              ),
             ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down_rounded, color: currentVehicle.color, size: 18),
           ],
         ),
-        child: Icon(icon, color: AppColors.navyDark, size: 22),
+      ),
+    );
+  }
+
+  void _openCalendarSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => MapMonthlyCalendarSheet(
+        initialDate: _selectedDate,
+        vehicleFilter: trackingService.currentVehicle,
+        onDateSelected: (date) {
+          Navigator.pop(context);
+          _onDateSelected(date);
+        },
+      ),
+    );
+  }
+
+  Widget _floatingCircleButton({
+    required IconData icon,
+    Color? iconColor,
+    String? tooltip,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip ?? '',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Icon(icon, color: iconColor ?? AppColors.navyDark, size: 22),
+        ),
       ),
     );
   }

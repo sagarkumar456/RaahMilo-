@@ -7,6 +7,7 @@ import '../core/app_colors.dart';
 import '../models/trip_model.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
+import '../widgets/vehicle_marker_widget.dart';
 import 'share_screen.dart';
 
 class TripDetailsScreen extends StatefulWidget {
@@ -235,19 +236,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                     ),
                   Marker(
                     point: currentPlaybackLL,
-                    width: 44,
-                    height: 44,
+                    width: 74,
+                    height: 74,
                     alignment: Alignment.center,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2.5),
-                        boxShadow: [
-                          BoxShadow(color: AppColors.primary.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 2)),
-                        ],
-                      ),
-                      child: const Icon(Icons.directions_car_filled_rounded, color: Colors.white, size: 22),
+                    child: VehicleMarkerWidget(
+                      vehicleType: widget.trip.vehicleTypeEnum,
+                      isLive: _isPlaying,
+                      size: 56.0,
                     ),
                   ),
                 ],
