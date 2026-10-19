@@ -8,6 +8,10 @@ enum NotificationType {
   trackingStarted,
   trackingStopped,
   general,
+  antiTheftArmed,
+  antiTheftDisarmed,
+  theftAlarmTriggered,
+  supportTicket,
 }
 
 class AppNotification {
@@ -43,6 +47,14 @@ class AppNotification {
         return Icons.play_circle_fill_rounded;
       case NotificationType.trackingStopped:
         return Icons.stop_circle_rounded;
+      case NotificationType.antiTheftArmed:
+        return Icons.security_rounded;
+      case NotificationType.antiTheftDisarmed:
+        return Icons.lock_open_rounded;
+      case NotificationType.theftAlarmTriggered:
+        return Icons.notification_important_rounded;
+      case NotificationType.supportTicket:
+        return Icons.support_agent_rounded;
       case NotificationType.general:
         return Icons.notifications_rounded;
     }
@@ -62,6 +74,14 @@ class AppNotification {
         return const Color(0xFF10B981); // Green
       case NotificationType.trackingStopped:
         return const Color(0xFFEF4444); // Red
+      case NotificationType.antiTheftArmed:
+        return const Color(0xFF10B981); // Emerald
+      case NotificationType.antiTheftDisarmed:
+        return const Color(0xFF64748B); // Slate
+      case NotificationType.theftAlarmTriggered:
+        return const Color(0xFFDC2626); // Bright Crimson
+      case NotificationType.supportTicket:
+        return const Color(0xFF2563EB); // Blue
       case NotificationType.general:
         return const Color(0xFF10B981); // Green
     }

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import '../core/app_colors.dart';
+import '../services/anti_theft_service.dart';
 import '../services/notification_service.dart';
+import 'anti_theft_screen.dart';
 import 'dashboard_screen.dart';
 import 'live_map_screen.dart';
 import 'location_disabled_screen.dart';
@@ -86,9 +88,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: NotificationService(),
+      animation: Listenable.merge([NotificationService(), antiTheftService]),
       builder: (context, _) {
         final unreadCount = NotificationService().unreadCount;
+        final isAlarmActive = antiTheftService.isAlarmActive;
 
         return PopScope(
           canPop: false,
@@ -162,13 +165,55 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 const SizedBox(width: 8),
               ],
             ),
-            body: IndexedStack(
-              index: _selectedTab,
+            body: Column(
               children: [
-                DashboardScreen(onNavigateTab: _switchTab),
-                const LiveMapScreen(),
-                const TripHistoryScreen(),
-                const ProfileScreen(),
+                if (isAlarmActive)
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AntiTheftScreen()),
+                      );
+                    },
+                    child: Container(
+                      width: double.infinity,
+                      color: AppColors.danger,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 22),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              '🚨 THEFT ALARM ACTIVE! Vehicle moved.',
+                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ),
+                          TextButton(
+                            style: TextButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: AppColors.danger,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              minimumSize: const Size(60, 28),
+                            ),
+                            onPressed: () => antiTheftService.silenceAlarm(),
+                            child: const Text('Silence', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                Expanded(
+                  child: IndexedStack(
+                    index: _selectedTab,
+                    children: [
+                      DashboardScreen(onNavigateTab: _switchTab),
+                      const LiveMapScreen(),
+                      const TripHistoryScreen(),
+                      const ProfileScreen(),
+                    ],
+                  ),
+                ),
               ],
             ),
             bottomNavigationBar: Container(

@@ -32,6 +32,14 @@ class GeocodingService extends ChangeNotifier {
 
   final HttpClient _client = HttpClient();
 
+  /// Gets address string for given coordinates
+  Future<String> getAddress(double lat, double lng) async {
+    await updateFromPosition(lat, lng);
+    return fullAddress.isNotEmpty
+        ? fullAddress
+        : 'Lat: ${lat.toStringAsFixed(4)}°, Lng: ${lng.toStringAsFixed(4)}°';
+  }
+
   /// Updates address from coordinates, using distance caching and rate limiting.
   Future<void> updateFromPosition(double lat, double lng) async {
     // If coordinates are invalid, skip

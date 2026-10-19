@@ -3,9 +3,12 @@ import 'package:flutter/services.dart';
 import '../core/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/tracking_service.dart';
+import 'anti_theft_screen.dart';
 import 'login_screen.dart';
 import 'premium_screen.dart';
+import 'settings_screen.dart';
 import 'share_screen.dart';
+import 'support_chat_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -160,29 +163,38 @@ class ProfileScreen extends StatelessWidget {
                 },
               ),
               _profileMenuTile(
-                icon: Icons.settings_outlined,
-                iconColor: AppColors.navyDark,
-                title: 'Settings',
-                subtitle: 'App preferences',
+                icon: Icons.shield_outlined,
+                iconColor: const Color(0xFF10B981),
+                title: 'Anti-Theft Protection',
+                subtitle: 'Alarm siren & vehicle arming',
                 onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Preferences: Units (km/h), Dark mode, Sync rate')),
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AntiTheftScreen()),
                   );
                 },
               ),
               _profileMenuTile(
-                icon: Icons.help_outline_rounded,
+                icon: Icons.settings_outlined,
                 iconColor: AppColors.navyDark,
-                title: 'Help & Support',
-                subtitle: 'FAQ, contact us',
+                title: 'Settings',
+                subtitle: 'Anti-Theft, preferences & alerts',
                 onTap: () {
-                  showAboutDialog(
-                    context: context,
-                    applicationName: 'RaahMilo',
-                    applicationVersion: '1.0.0',
-                    children: const [
-                      Text('Consent-based GPS tracking app designed for vehicle & family safety.'),
-                    ],
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
+              ),
+              _profileMenuTile(
+                icon: Icons.support_agent_rounded,
+                iconColor: const Color(0xFF2563EB),
+                title: 'Help & AI Support',
+                subtitle: '24x7 AI assistant & helpdesk',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const SupportChatScreen()),
                   );
                 },
               ),
