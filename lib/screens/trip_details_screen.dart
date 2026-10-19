@@ -130,8 +130,11 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final latLngList = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
+    final playbackIndex = _points.isNotEmpty
+        ? ((_points.length - 1) * _sliderValue).round().clamp(0, _points.length - 1)
+        : 0;
     final currentPlaybackPt = _points.isNotEmpty
-        ? _points[((_points.length - 1) * _sliderValue).round().clamp(0, _points.length - 1)]
+        ? _points[playbackIndex]
         : TripPoint(latitude: 28.6139, longitude: 77.2090, speed: 0, accuracy: 5, timestamp: DateTime.now());
 
     final currentPlaybackLL = ll.LatLng(currentPlaybackPt.latitude, currentPlaybackPt.longitude);
@@ -236,13 +239,17 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                     ),
                   Marker(
                     point: currentPlaybackLL,
-                    width: 74,
-                    height: 74,
+                    width: 58,
+                    height: 58,
                     alignment: Alignment.center,
                     child: VehicleMarkerWidget(
                       vehicleType: widget.trip.vehicleTypeEnum,
                       isLive: _isPlaying,
-                      size: 56.0,
+                      isMoving: _isPlaying,
+                      heading: (playbackIndex > 0 && latLngList.length > 1)
+                          ? calculateBearing(latLngList[playbackIndex - 1], latLngList[playbackIndex])
+                          : 0.0,
+                      size: 42.0,
                     ),
                   ),
                 ],

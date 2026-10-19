@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -24,7 +25,7 @@ class LiveMapScreen extends StatefulWidget {
   State<LiveMapScreen> createState() => _LiveMapScreenState();
 }
 
-class _LiveMapScreenState extends State<LiveMapScreen> {
+class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   bool _isSatellite = false;
   bool _isLocationEnabled = true;
@@ -36,15 +37,59 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   static const ll.LatLng _defaultCoord = ll.LatLng(20.5937, 78.9629); // India center fallback until GPS is acquired
 
+  ll.LatLng? _animatedMarkerCoord;
+  ll.LatLng? _targetMarkerCoord;
+  ll.LatLng? _prevMarkerCoord;
+  AnimationController? _markerMoveController;
+  Animation<double>? _markerMoveAnimation;
+
   @override
   void initState() {
     super.initState();
+    _markerMoveController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 650),
+    );
+    _markerMoveAnimation = CurvedAnimation(
+      parent: _markerMoveController!,
+      curve: Curves.easeInOutCubic,
+    )..addListener(() {
+      if (_prevMarkerCoord != null && _targetMarkerCoord != null && mounted) {
+        final t = _markerMoveAnimation!.value;
+        setState(() {
+          _animatedMarkerCoord = ll.LatLng(
+            _prevMarkerCoord!.latitude + (_targetMarkerCoord!.latitude - _prevMarkerCoord!.latitude) * t,
+            _prevMarkerCoord!.longitude + (_targetMarkerCoord!.longitude - _prevMarkerCoord!.longitude) * t,
+          );
+        });
+      }
+    });
+
+    trackingService.addListener(_onTrackingUpdate);
     _checkLocationServiceStatus();
     _initDeviceLocation();
   }
 
+  void _onTrackingUpdate() {
+    final pos = trackingService.current;
+    if (pos != null) {
+      final newCoord = ll.LatLng(pos.latitude, pos.longitude);
+      if (_targetMarkerCoord == null) {
+        _targetMarkerCoord = newCoord;
+        _animatedMarkerCoord = newCoord;
+      } else if (_targetMarkerCoord!.latitude != newCoord.latitude ||
+                 _targetMarkerCoord!.longitude != newCoord.longitude) {
+        _prevMarkerCoord = _animatedMarkerCoord ?? _targetMarkerCoord;
+        _targetMarkerCoord = newCoord;
+        _markerMoveController?.forward(from: 0.0);
+      }
+    }
+  }
+
   @override
   void dispose() {
+    trackingService.removeListener(_onTrackingUpdate);
+    _markerMoveController?.dispose();
     _serviceStatusSub?.cancel();
     super.dispose();
   }
@@ -265,9 +310,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             .map((p) => ll.LatLng(p.latitude, p.longitude))
             .toList();
 
-        final speedKmh = (pos != null && isActive)
-            ? (pos.speed.clamp(0, 999) * 3.6).toStringAsFixed(0)
-            : '0';
+        final rawSpeed = (pos != null && isActive)
+            ? (pos.speed.clamp(0, 999) * 3.6)
+            : 0.0;
+        final speedKmh = rawSpeed.toStringAsFixed(0);
+        final isMoving = isActive && rawSpeed >= 1.5;
+
+        double heading = 0.0;
+        if (pos != null && pos.heading > 0 && pos.heading <= 360) {
+          heading = pos.heading * (pi / 180.0);
+        } else if (routePoints.length >= 2) {
+          heading = calculateBearing(routePoints[routePoints.length - 2], routePoints.last);
+        }
 
         final tileUrl = _isSatellite
             ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
@@ -320,13 +374,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
               markers.add(
                 Marker(
                   point: tPoints.last,
-                  width: 70,
-                  height: 70,
+                  width: 50,
+                  height: 50,
                   alignment: Alignment.center,
                   child: VehicleMarkerWidget(
                     vehicleType: trip.vehicleTypeEnum,
                     isLive: false,
-                    size: 54.0,
+                    isMoving: false,
+                    size: 38.0,
                     speedText: trip.avgSpeedKmh > 0 ? '${trip.avgSpeedKmh.toStringAsFixed(0)} km/h' : null,
                   ),
                 ),
@@ -361,17 +416,20 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
             );
           }
           if (pos != null) {
+            final markerPoint = _animatedMarkerCoord ?? currentCoord;
             markers.add(
               Marker(
-                point: currentCoord,
-                width: 76,
-                height: 76,
+                point: markerPoint,
+                width: 58,
+                height: 58,
                 alignment: Alignment.center,
                 child: VehicleMarkerWidget(
                   vehicleType: currentVehicle,
                   speedText: '$speedKmh km/h',
                   isLive: isActive,
-                  size: 58.0,
+                  isMoving: isMoving,
+                  heading: heading,
+                  size: 42.0,
                 ),
               ),
             );
