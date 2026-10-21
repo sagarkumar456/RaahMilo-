@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
+import '../core/map_tiles.dart';
 import '../models/shared_device_model.dart';
 import '../services/share_service.dart';
 import '../widgets/pulse_indicator.dart';
@@ -48,10 +49,6 @@ class _SharedDeviceMapScreenState extends State<SharedDeviceMapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final tileUrl = _isSatellite
-        ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-        : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-
     return StreamBuilder<SharedDeviceModel?>(
       stream: shareService.streamSingleShare(_currentDevice.id),
       builder: (context, snapshot) {
@@ -106,10 +103,7 @@ class _SharedDeviceMapScreenState extends State<SharedDeviceMapScreen> {
                   maxZoom: 19.0,
                 ),
                 children: [
-                  TileLayer(
-                    urlTemplate: tileUrl,
-                    userAgentPackageName: 'com.trackmyphone.gps',
-                  ),
+                  AppMapTiles.buildTileLayer(isSatellite: _isSatellite),
 
                   // Marker for the person
                   MarkerLayer(

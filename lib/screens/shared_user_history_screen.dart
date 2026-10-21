@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
+import '../core/map_tiles.dart';
 import '../models/shared_device_model.dart';
 import '../models/trip_model.dart';
 import '../services/share_service.dart';
@@ -357,10 +358,7 @@ class _SharedUserHistoryScreenState extends State<SharedUserHistoryScreen> {
                   ),
                 ),
                 children: [
-                  TileLayer(
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.trackmyphone.app',
-                  ),
+                  AppMapTiles.buildTileLayer(),
                   MarkerLayer(
                     markers: [
                       Marker(

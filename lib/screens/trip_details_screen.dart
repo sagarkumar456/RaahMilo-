@@ -4,9 +4,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
+import '../core/map_tiles.dart';
+import '../models/stoppage_model.dart';
 import '../models/trip_model.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
+import '../widgets/stoppage_marker_widget.dart';
 import '../widgets/vehicle_marker_widget.dart';
 import 'share_screen.dart';
 
@@ -27,6 +30,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   Timer? _playbackTimer;
 
   late List<TripPoint> _points;
+  List<StoppageModel> get _stoppages => extractStoppages(_points);
 
   @override
   void initState() {
@@ -202,41 +206,101 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               initialZoom: 14.8,
             ),
             children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.trackmyphone.gps',
-              ),
+              AppMapTiles.buildTileLayer(),
               PolylineLayer(
                 polylines: [
+                  // Outer casing / road edge
                   Polyline(
                     points: latLngList,
-                    strokeWidth: 5.0,
-                    color: AppColors.primary,
+                    strokeWidth: 7.2,
+                    color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                  ),
+                  // Main route line (Green)
+                  Polyline(
+                    points: latLngList,
+                    strokeWidth: 5.2,
+                    color: const Color(0xFF10B981),
                   ),
                 ],
               ),
-              // Directional arrows along route
+              // Directional arrows embedded along route
               MarkerLayer(
-                markers: buildDirectionalArrowMarkers(latLngList),
+                markers: buildDirectionalArrowMarkers(
+                  latLngList,
+                  routeColor: const Color(0xFF10B981),
+                ),
               ),
               MarkerLayer(
                 markers: [
                   if (latLngList.isNotEmpty)
                     Marker(
                       point: latLngList.first,
-                      width: 36,
-                      height: 36,
+                      width: 52,
+                      height: 52,
                       alignment: Alignment.topCenter,
-                      child: const Icon(Icons.location_on_rounded, color: AppColors.primary, size: 36),
+                      child: StartOriginMarkerWidget(
+                        startedAt: _points.first.timestamp,
+                        onTap: () {
+                          final startStop = StoppageModel(
+                            stopNumber: 0,
+                            latitude: _points.first.latitude,
+                            longitude: _points.first.longitude,
+                            arrivedAt: _points.first.timestamp,
+                            departedAt: _points.first.timestamp,
+                            duration: Duration.zero,
+                            isStart: true,
+                          );
+                          showStoppageDetailsSheet(context, startStop);
+                        },
+                      ),
                     ),
-                  if (latLngList.isNotEmpty)
+                  // Intermediate Stoppages
+                  for (final stoppage in _stoppages.where((s) => !s.isEndStop && !s.isStart))
+                    Marker(
+                      point: stoppage.latLng,
+                      width: 54,
+                      height: 56,
+                      alignment: Alignment.topCenter,
+                      child: StoppageMarkerWidget(
+                        stoppage: stoppage,
+                        onTap: () => showStoppageDetailsSheet(context, stoppage),
+                      ),
+                    ),
+                  // End Stoppage Marker ("na end stopage banana hai")
+                  if (_stoppages.any((s) => s.isEndStop))
+                    Marker(
+                      point: _stoppages.firstWhere((s) => s.isEndStop).latLng,
+                      width: 68,
+                      height: 60,
+                      alignment: Alignment.topCenter,
+                      child: StoppageMarkerWidget(
+                        stoppage: _stoppages.firstWhere((s) => s.isEndStop),
+                        onTap: () => showStoppageDetailsSheet(
+                          context,
+                          _stoppages.firstWhere((s) => s.isEndStop),
+                        ),
+                      ),
+                    )
+                  else if (latLngList.isNotEmpty)
                     Marker(
                       point: latLngList.last,
-                      width: 36,
-                      height: 36,
+                      width: 68,
+                      height: 60,
                       alignment: Alignment.topCenter,
-                      child: const Icon(Icons.flag_rounded, color: AppColors.danger, size: 36),
+                      child: StoppageMarkerWidget(
+                        stoppage: StoppageModel(
+                          stopNumber: _stoppages.length + 1,
+                          latitude: latLngList.last.latitude,
+                          longitude: latLngList.last.longitude,
+                          arrivedAt: _points.last.timestamp,
+                          departedAt: _points.last.timestamp,
+                          duration: Duration.zero,
+                          isEndStop: true,
+                        ),
+                        onTap: () {},
+                      ),
                     ),
+                  // Current Playback Vehicle
                   Marker(
                     point: currentPlaybackLL,
                     width: 58,
@@ -297,7 +361,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                     ),
                   ),
                   const SizedBox(height: 14),
-                  // 3 Stats Columns
+                  // 4 Stats Columns
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -313,8 +377,72 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                         label: 'Avg Speed',
                         value: '${widget.trip.avgSpeedKmh.toStringAsFixed(0)} km/h',
                       ),
+                      _statColumn(
+                        label: 'Halts',
+                        value: '${_stoppages.where((s) => !s.isEndStop && !s.isStart).length}',
+                      ),
                     ],
                   ),
+                  if (_stoppages.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      height: 30,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _stoppages.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, idx) {
+                          final st = _stoppages[idx];
+                          final isEnd = st.isEndStop;
+                          final chipColor = isEnd ? const Color(0xFFDC2626) : const Color(0xFFF59E0B);
+                          return GestureDetector(
+                            onTap: () {
+                              final ptIndex = _points.indexWhere((p) =>
+                                  (p.latitude - st.latitude).abs() < 0.0005 &&
+                                  (p.longitude - st.longitude).abs() < 0.0005);
+                              if (ptIndex != -1 && _points.length > 1) {
+                                setState(() {
+                                  _sliderValue = ptIndex / (_points.length - 1);
+                                });
+                                _updatePlaybackMarker();
+                              }
+                              _mapController.move(st.latLng, 16.5);
+                              showStoppageDetailsSheet(context, st);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: chipColor.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: chipColor.withValues(alpha: 0.4), width: 1),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    isEnd ? Icons.flag_rounded : Icons.pause_circle_rounded,
+                                    size: 13,
+                                    color: chipColor,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    isEnd
+                                        ? 'End Stoppage'
+                                        : 'Stop #${st.stopNumber} (${st.formattedDuration})',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: chipColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   // Timestamp above slider
                   Align(

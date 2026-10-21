@@ -37,7 +37,7 @@ enum VehicleType {
   Color get color {
     switch (this) {
       case VehicleType.car:
-        return const Color(0xFF2563EB); // Royal Blue
+        return const Color(0xFF10B981); // Emerald Green
       case VehicleType.human:
         return const Color(0xFF10B981); // Emerald Green
       case VehicleType.scooty:
@@ -50,7 +50,7 @@ enum VehicleType {
   Color get lightColor {
     switch (this) {
       case VehicleType.car:
-        return const Color(0xFFEFF6FF);
+        return const Color(0xFFECFDF5);
       case VehicleType.human:
         return const Color(0xFFECFDF5);
       case VehicleType.scooty:

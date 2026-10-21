@@ -28,39 +28,40 @@ class VehicleMarkerWidget extends StatefulWidget {
 
 class _VehicleMarkerWidgetState extends State<VehicleMarkerWidget>
     with SingleTickerProviderStateMixin {
-  late AnimationController _vibeController;
-  late Animation<double> _bounceAnimation;
+  late AnimationController _pulseController;
+  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
     super.initState();
-    _vibeController = AnimationController(
+    _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 380),
+      duration: const Duration(milliseconds: 1400),
     );
-    _bounceAnimation = Tween<double>(begin: 0.0, end: -2.0).animate(
-      CurvedAnimation(parent: _vibeController, curve: Curves.easeInOut),
+    _pulseAnimation = CurvedAnimation(
+      parent: _pulseController,
+      curve: Curves.easeInOut,
     );
 
-    if (widget.isMoving) {
-      _vibeController.repeat(reverse: true);
+    if (widget.isMoving || widget.isLive) {
+      _pulseController.repeat(reverse: true);
     }
   }
 
   @override
   void didUpdateWidget(covariant VehicleMarkerWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isMoving && !_vibeController.isAnimating) {
-      _vibeController.repeat(reverse: true);
-    } else if (!widget.isMoving && _vibeController.isAnimating) {
-      _vibeController.stop();
-      _vibeController.value = 0.0;
+    if ((widget.isMoving || widget.isLive) && !_pulseController.isAnimating) {
+      _pulseController.repeat(reverse: true);
+    } else if (!widget.isMoving && !widget.isLive && _pulseController.isAnimating) {
+      _pulseController.stop();
+      _pulseController.value = 0.0;
     }
   }
 
   @override
   void dispose() {
-    _vibeController.dispose();
+    _pulseController.dispose();
     super.dispose();
   }
 
@@ -68,82 +69,87 @@ class _VehicleMarkerWidgetState extends State<VehicleMarkerWidget>
   Widget build(BuildContext context) {
     final color = widget.vehicleType.color;
     final size = widget.size;
-    final isFacingLeft = sin(widget.heading) < -0.2;
+    final isFacingLeft = sin(widget.heading) < -0.15;
 
     return AnimatedBuilder(
-      animation: _vibeController,
+      animation: _pulseController,
       builder: (context, child) {
-        final bounce = widget.isMoving ? _bounceAnimation.value : 0.0;
+        final pulse = _pulseAnimation.value;
 
         return Stack(
           clipBehavior: Clip.none,
           alignment: Alignment.center,
           children: [
-            // 1. Navigation Directional Beam (Active when moving)
+            // 1. Navigation Directional Beam (Points in forward travel direction)
             if (widget.isMoving)
               Transform.rotate(
                 angle: widget.heading,
                 child: CustomPaint(
-                  size: Size(size * 1.35, size * 1.35),
+                  size: Size(size * 1.5, size * 1.5),
                   painter: _DirectionBeamPainter(color: color),
                 ),
               )
             else if (widget.isLive)
-              // Subtle resting dot when tracking is on but stopped
+              // Subtle resting radar ring when tracking is active but stopped
               Container(
-                width: size * 1.05,
-                height: size * 1.05,
+                width: size * (0.95 + 0.1 * pulse),
+                height: size * (0.95 + 0.1 * pulse),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: color.withValues(alpha: 0.12),
+                  color: color.withValues(alpha: 0.08 * (1.0 - pulse * 0.4)),
                   border: Border.all(
-                    color: color.withValues(alpha: 0.3),
-                    width: 1.0,
+                    color: color.withValues(alpha: 0.25 * (1.0 - pulse * 0.5)),
+                    width: 1.2,
                   ),
                 ),
               ),
 
-            // 2. Realistic Ground Shadow (Soft asphalt contact shadow, no white background)
+            // 2. Realistic Ground Asphalt Contact Shadow (Firmly anchors vehicle onto the road, prevents floating/flying look)
             Positioned(
-              bottom: 2,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                width: widget.isMoving ? size * 0.65 : size * 0.72,
-                height: 6,
+              bottom: 4,
+              child: Container(
+                width: size * 0.76,
+                height: 8,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.all(Radius.elliptical(size * 0.72, 6)),
+                  borderRadius: BorderRadius.all(Radius.elliptical(size * 0.76, 8)),
                   boxShadow: [
+                    // Deep contact shadow directly under tires
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: widget.isMoving ? 0.35 : 0.45),
-                      blurRadius: widget.isMoving ? 4 : 6,
-                      spreadRadius: 1,
+                      color: Colors.black.withValues(alpha: 0.55),
+                      blurRadius: 3,
+                      spreadRadius: 0.5,
+                      offset: const Offset(0, 1),
+                    ),
+                    // Ambient road occlusion shadow
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.25),
+                      blurRadius: 7,
+                      spreadRadius: 2,
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
               ),
             ),
 
-            // 3. 3D Vehicle Model (Clean transparent PNG, zero white background)
-            Transform.translate(
-              offset: Offset(0, bounce),
-              child: Transform.scale(
-                scaleX: isFacingLeft ? -1.0 : 1.0, // Face movement direction
-                child: SizedBox(
-                  width: size,
-                  height: size,
-                  child: Image.asset(
-                    widget.vehicleType.assetPath,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return Center(
-                        child: Icon(
-                          widget.vehicleType.icon,
-                          color: color,
-                          size: size * 0.75,
-                        ),
-                      );
-                    },
-                  ),
+            // 3. 3D Vehicle Model (Firmly grounded on the road, no flying bounce)
+            Transform.scale(
+              scaleX: isFacingLeft ? -1.0 : 1.0, // Orients vehicle along movement direction
+              child: SizedBox(
+                width: size,
+                height: size,
+                child: Image.asset(
+                  widget.vehicleType.assetPath,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return Center(
+                      child: Icon(
+                        widget.vehicleType.icon,
+                        color: color,
+                        size: size * 0.75,
+                      ),
+                    );
+                  },
                 ),
               ),
             ),

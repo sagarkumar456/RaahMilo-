@@ -280,16 +280,17 @@ class TrackingService extends ChangeNotifier {
     if (!_active || _tripId == null) return;
     if (p.accuracy > 100) return; // Discard bad fixes
 
-    final old = _current;
-    if (old != null) {
+    final isFirstPoint = _tripPoints.isEmpty;
+    if (!isFirstPoint) {
+      final lastPoint = _tripPoints.last;
       final step = Geolocator.distanceBetween(
-        old.latitude,
-        old.longitude,
+        lastPoint.latitude,
+        lastPoint.longitude,
         p.latitude,
         p.longitude,
       );
       if (step < 2) return;
-      if (step > 500 && p.timestamp.difference(old.timestamp).inSeconds < 10) return;
+      if (step > 500 && p.timestamp.difference(lastPoint.timestamp).inSeconds < 10) return;
       _meters += step;
     }
 
@@ -576,6 +577,32 @@ class TrackingService extends ChangeNotifier {
         accuracy: _current!.accuracy,
         timestamp: now,
       ));
+    } else if (finalPoints.isNotEmpty && _current != null) {
+      // Append destination point if different from the last point
+      final lastPt = finalPoints.last;
+      final endDist = Geolocator.distanceBetween(
+        lastPt.latitude,
+        lastPt.longitude,
+        _current!.latitude,
+        _current!.longitude,
+      );
+      if (endDist >= 2) {
+        final destPt = TripPoint(
+          latitude: _current!.latitude,
+          longitude: _current!.longitude,
+          speed: _current!.speed,
+          accuracy: _current!.accuracy,
+          timestamp: now,
+        );
+        finalPoints.add(destPt);
+        _points.add(LatLng(_current!.latitude, _current!.longitude));
+      }
+    }
+
+    if (_points.isEmpty && finalPoints.isNotEmpty) {
+      for (final tp in finalPoints) {
+        _points.add(LatLng(tp.latitude, tp.longitude));
+      }
     }
 
     _tripId = null;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
+import '../core/map_tiles.dart';
 import '../services/anti_theft_service.dart';
 import 'support_chat_screen.dart';
 
@@ -479,10 +480,7 @@ class _AntiTheftScreenState extends State<AntiTheftScreen> with SingleTickerProv
                             ),
                           ),
                           children: [
-                            TileLayer(
-                              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              userAgentPackageName: 'com.trackmyphone.app',
-                            ),
+                            AppMapTiles.buildTileLayer(),
                             CircleLayer(
                               circles: [
                                 CircleMarker(

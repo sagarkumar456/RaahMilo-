@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'stoppage_model.dart';
 import 'vehicle_type.dart';
 
 class TripPoint {
@@ -117,6 +118,15 @@ class TripModel {
     final diffHours = end.difference(startedAt).inSeconds / 3600.0;
     if (diffHours <= 0) return 0.0;
     return (distanceMeters / 1000.0) / diffHours;
+  }
+
+  List<StoppageModel> get stoppages => extractStoppages(points);
+
+  int get intermediateStoppagesCount => stoppages.where((s) => !s.isEndStop).length;
+
+  StoppageModel? get endStoppage {
+    final list = stoppages.where((s) => s.isEndStop).toList();
+    return list.isNotEmpty ? list.first : null;
   }
 
   Map<String, dynamic> toJson() => {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
+import '../core/map_tiles.dart';
 import '../services/geofence_service.dart';
 import '../services/tracking_service.dart';
 
@@ -97,10 +98,7 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
                   },
                 ),
                 children: [
-                  TileLayer(
-                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.trackmyphone.gps',
-                  ),
+                  AppMapTiles.buildTileLayer(),
                   CircleLayer(
                     circles: [
                       CircleMarker(

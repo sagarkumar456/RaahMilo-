@@ -2,7 +2,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
-import '../core/app_colors.dart';
 
 /// Helper to calculate geographic bearing (heading in radians) from one LatLng to another
 double calculateBearing(ll.LatLng from, ll.LatLng to) {
@@ -24,31 +23,41 @@ double approximateDistanceMeters(ll.LatLng from, ll.LatLng to) {
   return sqrt(dx * dx + dy * dy);
 }
 
-/// Generates directional arrow markers along a polyline path to show the movement direction
+/// Computes contrasting chevron color so arrows are always crisp inside the route line
+Color getContrastingChevronColor(Color? routeColor) {
+  if (routeColor == null) return Colors.white;
+  final luminance = routeColor.computeLuminance();
+  // If route is very light (e.g. bright yellow), use deep slate, otherwise crisp white
+  return luminance > 0.68 ? const Color(0xFF0F172A) : Colors.white;
+}
+
+/// Generates standard embedded navigation chevron arrows directly INSIDE the route path.
+/// Zero chip containers, zero drop shadows — looks like Google Maps & Uber route arrows.
 List<Marker> buildDirectionalArrowMarkers(
   List<ll.LatLng> points, {
-  Color arrowColor = AppColors.primary,
-  double minDistanceMeters = 25.0, // Minimum distance before placing an arrow
+  Color? routeColor,
+  Color? arrowColor,
+  double minDistanceMeters = 8.0,
 }) {
   if (points.length < 2) return [];
 
   final List<Marker> markers = [];
-  double accumulatedDist = 0.0;
+  final Color chevronColor = arrowColor ?? getContrastingChevronColor(routeColor);
 
-  // Determine an adaptive spacing so the map doesn't get overcrowded
-  // For short trips (< 500m): arrow every ~35m
-  // For medium trips (1km - 5km): arrow every ~100m
-  // For long trips (> 5km): arrow every ~250m
+  // Calculate total path distance to adjust spacing
   double totalDistance = 0.0;
   for (int i = 0; i < points.length - 1; i++) {
     totalDistance += approximateDistanceMeters(points[i], points[i + 1]);
   }
 
-  final double targetSpacing = totalDistance < 600
-      ? 40.0
-      : totalDistance < 3000
-          ? 90.0
-          : 180.0;
+  // Spacing: short trips every ~35m, medium every ~65m, long every ~120m
+  final double targetSpacing = totalDistance < 500
+      ? 35.0
+      : totalDistance < 2500
+          ? 65.0
+          : 120.0;
+
+  double accumulatedDist = 0.0;
 
   for (int i = 0; i < points.length - 1; i++) {
     final from = points[i];
@@ -57,8 +66,7 @@ List<Marker> buildDirectionalArrowMarkers(
 
     accumulatedDist += segmentDist;
 
-    // Check if we reached the distance threshold for an arrow
-    if (accumulatedDist >= targetSpacing && segmentDist >= 6.0) {
+    if (accumulatedDist >= targetSpacing && segmentDist >= minDistanceMeters) {
       accumulatedDist = 0.0;
 
       final midLat = (from.latitude + to.latitude) / 2.0;
@@ -68,32 +76,16 @@ List<Marker> buildDirectionalArrowMarkers(
       markers.add(
         Marker(
           point: ll.LatLng(midLat, midLng),
-          width: 22,
-          height: 22,
+          width: 14,
+          height: 14,
           alignment: Alignment.center,
           child: Transform.rotate(
             angle: bearing,
-            child: Container(
-              width: 20,
-              height: 20,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(color: arrowColor.withValues(alpha: 0.3), width: 1.2),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.22),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1.5),
-                  ),
-                ],
-              ),
-              child: Center(
-                child: Icon(
-                  Icons.navigation_rounded,
-                  size: 12,
-                  color: arrowColor,
-                ),
+            child: CustomPaint(
+              size: const Size(14, 14),
+              painter: EmbeddedChevronPainter(
+                color: chevronColor,
+                strokeWidth: 2.3,
               ),
             ),
           ),
@@ -102,7 +94,7 @@ List<Marker> buildDirectionalArrowMarkers(
     }
   }
 
-  // If path is long enough but accumulated distance didn't trigger, add at least one midpoint arrow
+  // Fallback: If no arrow triggered but path exists, add at midpoint
   if (markers.isEmpty && points.length >= 2) {
     final midIndex = points.length ~/ 2;
     final from = points[midIndex > 0 ? midIndex - 1 : 0];
@@ -115,32 +107,16 @@ List<Marker> buildDirectionalArrowMarkers(
           (from.latitude + to.latitude) / 2.0,
           (from.longitude + to.longitude) / 2.0,
         ),
-        width: 22,
-        height: 22,
+        width: 14,
+        height: 14,
         alignment: Alignment.center,
         child: Transform.rotate(
           angle: bearing,
-          child: Container(
-            width: 20,
-            height: 20,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(color: arrowColor.withValues(alpha: 0.3), width: 1.2),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.22),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1.5),
-                ),
-              ],
-            ),
-            child: Center(
-              child: Icon(
-                Icons.navigation_rounded,
-                size: 12,
-                color: arrowColor,
-              ),
+          child: CustomPaint(
+            size: const Size(14, 14),
+            painter: EmbeddedChevronPainter(
+              color: chevronColor,
+              strokeWidth: 2.3,
             ),
           ),
         ),
@@ -149,4 +125,40 @@ List<Marker> buildDirectionalArrowMarkers(
   }
 
   return markers;
+}
+
+/// Standard navigation chevron painter that renders flush inside the polyline.
+class EmbeddedChevronPainter extends CustomPainter {
+  final Color color;
+  final double strokeWidth;
+
+  const EmbeddedChevronPainter({
+    required this.color,
+    this.strokeWidth = 2.3,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    final path = Path();
+    final w = size.width;
+    final h = size.height;
+
+    // Centered chevron pointing forward (UP / 0 radians)
+    path.moveTo(w * 0.18, h * 0.70);
+    path.lineTo(w * 0.50, h * 0.30);
+    path.lineTo(w * 0.82, h * 0.70);
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant EmbeddedChevronPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.strokeWidth != strokeWidth;
 }

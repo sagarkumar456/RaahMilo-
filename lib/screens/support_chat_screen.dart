@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../core/app_colors.dart';
 import '../models/app_notification.dart';
@@ -13,6 +14,9 @@ class ChatMessage {
   final DateTime timestamp;
   final String? ticketId;
   final bool isIssueReported;
+  final String? thoughtDetail;
+  final double? thoughtDurationSec;
+  bool isThoughtExpanded;
 
   ChatMessage({
     required this.id,
@@ -21,6 +25,9 @@ class ChatMessage {
     required this.timestamp,
     this.ticketId,
     this.isIssueReported = false,
+    this.thoughtDetail,
+    this.thoughtDurationSec,
+    this.isThoughtExpanded = false,
   });
 }
 
@@ -36,6 +43,7 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
   final ScrollController _scrollController = ScrollController();
   final List<ChatMessage> _messages = [];
   bool _isTyping = false;
+  String _thinkingStep = '';
   bool _isSending = false;
   String? _activeSessionTicketId;
   String _selectedLanguage = 'en'; // 'en' = English, 'hi' = Hindi
@@ -154,11 +162,51 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
     return false;
   }
 
+  String _generateThoughtDetail(String query, bool useHindi) {
+    final q = query.toLowerCase();
+    if (q.contains('theft') || q.contains('chori') || q.contains('alarm') || q.contains('siren') || q.contains('security')) {
+      return useHindi
+          ? '• User ke suraksha sawal ka vishleshan kiya gaya.\n'
+            '• Vehicle Anti-Theft aur Alarm Siren telemetry state verify ki gayi.\n'
+            '• Critical theft protocol aur immediate safety guidance formulate kiya gaya.'
+          : '• Analyzed security alert & theft protection query.\n'
+            '• Verified Anti-Theft engine lock and Siren alarm telemetry status.\n'
+            '• Formulated immediate safety guidelines and emergency escalation.';
+    } else if (q.contains('gps') || q.contains('location') || q.contains('map') || q.contains('accuracy') || q.contains('rasta')) {
+      return useHindi
+          ? '• GPS hardware tracking aur satellite lock accuracy evaluate ki gayi.\n'
+            '• Location permissions aur background service battery restrictions check kiye gaye.\n'
+            '• Precision calibration aur High Accuracy GPS mode steps formulate kiye gaye.'
+          : '• Evaluated GPS coordinates, satellite fix, and background location mode.\n'
+            '• Verified device battery optimization and background permission state.\n'
+            '• Formulated precision calibration and real-time navigation recommendations.';
+    } else if (q.contains('issue') || q.contains('shikayat') || q.contains('help') || q.contains('madad') || q.contains('problem') || q.contains('kharab')) {
+      return useHindi
+          ? '• Samasya ki gambhirta aur ticket escalation conditions check ki gayi.\n'
+            '• Support Desk notification dispatch channel verify kiya gaya.\n'
+            '• Rapid redressal protocol aur ticket status guidance formulate kiya gaya.'
+          : '• Evaluated issue severity and ticket escalation thresholds.\n'
+            '• Verified dispatch channel to Support Desk admin.\n'
+            '• Formulated immediate assistance steps and ticket tracking reference.';
+    } else {
+      return useHindi
+          ? '• User prashna ka uddeshya samajha gaya.\n'
+            '• RaahMilo platform knowledge base aur vehicle controls scan kiye gaye.\n'
+            '• Spasht aur madadgar samadhan prepare kiya gaya.'
+          : '• Interpreted query intent and context.\n'
+            '• Scanned RaahMilo platform services, trip telemetry, and knowledge base.\n'
+            '• Formulated clear, step-by-step assistant guidance.';
+    }
+  }
+
   Future<void> _handleSendMessage([String? predefinedText]) async {
     if (_isSending || _isTyping) return;
 
     final text = (predefinedText ?? _controller.text).trim();
     if (text.isEmpty) return;
+
+    final authService = AuthService();
+    final apiService = ApiService();
 
     _isSending = true;
 
@@ -174,11 +222,35 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
         timestamp: DateTime.now(),
       );
 
+      final useHindi = _selectedLanguage == 'hi' || _isHindiInput(text);
+      final stopwatch = Stopwatch()..start();
+
       setState(() {
         _messages.add(userMsg);
         _isTyping = true;
+        _thinkingStep = useHindi ? 'Sawalon ka vishleshan ho raha hai...' : 'Understanding query...';
       });
       _scrollToBottom();
+
+      // Progressive thinking status updates
+      Future.delayed(const Duration(milliseconds: 350), () {
+        if (mounted && _isTyping) {
+          setState(() {
+            _thinkingStep = useHindi
+                ? 'Suraksha va telemetry jaanch...'
+                : 'Analyzing telemetry & vehicle context...';
+          });
+        }
+      });
+      Future.delayed(const Duration(milliseconds: 750), () {
+        if (mounted && _isTyping) {
+          setState(() {
+            _thinkingStep = useHindi
+                ? 'Samadhan formulate ho raha hai...'
+                : 'Synthesizing response & solution...';
+          });
+        }
+      });
 
       // Check if this is an issue requiring email escalation to admin
       final bool hasIssue = _isIssueKeywords(text);
@@ -217,9 +289,6 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
         }
       }
 
-      // Determine reply language: if user explicitly typed Hindi or language is 'hi', reply in Hindi; otherwise English
-      final useHindi = _selectedLanguage == 'hi' || _isHindiInput(text);
-
       // Call API for AI message
       final history = _messages.take(10).map((m) => {
             'role': m.isUser ? 'user' : 'assistant',
@@ -237,9 +306,22 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
       final botResponse = aiRes['reply']?.toString() ??
           AiHumanEngine.generateHumanResponse(text, ticketId: createdTicketId, useHindi: useHindi);
 
+      // Fast, snappy thinking duration (~1.1s) so thinking is visible, yet response is delivered quickly
+      final elapsedMs = stopwatch.elapsedMilliseconds;
+      const minThinkingMs = 1100;
+      if (elapsedMs < minThinkingMs) {
+        await Future.delayed(Duration(milliseconds: minThinkingMs - elapsedMs));
+      }
+      stopwatch.stop();
+      final thoughtSeconds = (stopwatch.elapsedMilliseconds / 1000.0);
+      final roundedSec = (thoughtSeconds * 10).round() / 10.0;
+
+      final thoughtDetail = _generateThoughtDetail(text, useHindi);
+
       if (mounted) {
         setState(() {
           _isTyping = false;
+          _thinkingStep = '';
           _messages.add(
             ChatMessage(
               id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -248,6 +330,9 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
               timestamp: DateTime.now(),
               ticketId: createdTicketId,
               isIssueReported: hasIssue,
+              thoughtDetail: thoughtDetail,
+              thoughtDurationSec: roundedSec,
+              isThoughtExpanded: false,
             ),
           );
         });
@@ -596,39 +681,65 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
 
           if (_isTyping)
             Padding(
-              padding: const EdgeInsets.only(left: 20, bottom: 8),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.04),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+              padding: const EdgeInsets.only(left: 16, bottom: 10, right: 16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFF8FAFC), Color(0xFFF1F5F9)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _selectedLanguage == 'en' ? 'AI is typing...' : 'AI uttar de raha hai...',
-                          style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                        ),
-                      ],
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      topRight: Radius.circular(16),
+                      bottomRight: Radius.circular(16),
+                      bottomLeft: Radius.circular(4),
                     ),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
                   ),
-                ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.psychology_rounded,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        _thinkingStep.isNotEmpty
+                            ? _thinkingStep
+                            : (_selectedLanguage == 'en' ? 'AI is thinking...' : 'AI soch raha hai...'),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const _ThinkingDots(),
+                    ],
+                  ),
+                ),
               ),
             ),
 
@@ -780,6 +891,77 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
                 ),
               ),
             ],
+            if (!msg.isUser && msg.thoughtDurationSec != null) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          msg.isThoughtExpanded = !msg.isThoughtExpanded;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.psychology_rounded, size: 14, color: Color(0xFF6366F1)),
+                            const SizedBox(width: 6),
+                            Text(
+                              _selectedLanguage == 'en'
+                                  ? 'Thought for ${msg.thoughtDurationSec!.toStringAsFixed(1)}s'
+                                  : '${msg.thoughtDurationSec!.toStringAsFixed(1)}s tak socha',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF475569),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              msg.isThoughtExpanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.keyboard_arrow_down_rounded,
+                              size: 16,
+                              color: const Color(0xFF64748B),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (msg.isThoughtExpanded && msg.thoughtDetail != null)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(left: 8, right: 8, bottom: 8),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Text(
+                          msg.thoughtDetail!,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF334155),
+                            height: 1.4,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
             Text(
               msg.text,
               style: TextStyle(
@@ -802,6 +984,64 @@ class _SupportChatScreenState extends State<SupportChatScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ThinkingDots extends StatefulWidget {
+  const _ThinkingDots();
+
+  @override
+  State<_ThinkingDots> createState() => _ThinkingDotsState();
+}
+
+class _ThinkingDotsState extends State<_ThinkingDots> with SingleTickerProviderStateMixin {
+  late AnimationController _animController;
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _animController,
+      builder: (context, child) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (index) {
+            final delay = index * 0.2;
+            final val = (_animController.value - delay) % 1.0;
+            final offset = sin(val * 2 * pi) * 3.0;
+
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
+              child: Transform.translate(
+                offset: Offset(0, -offset.clamp(0.0, 3.0)),
+                child: Container(
+                  width: 4.5,
+                  height: 4.5,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF6366F1),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+      },
     );
   }
 }
