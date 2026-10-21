@@ -1,16 +1,15 @@
 import 'package:flutter_map/flutter_map.dart';
 
 /// Centralized map tile server configurations for RaahMilo.
-/// Uses ultra-fast CartoDB Voyager CDN as primary layer with OpenStreetMap as automatic fallback.
-/// This prevents blank/grey screens caused by carrier-level blocking or OSM rate limits.
+/// 100% Free, zero API key required, zero watermarks.
 class AppMapTiles {
-  /// CartoDB Voyager: High-performance Cloudflare CDN tiles, modern Google-Maps style aesthetic
+  /// OpenStreetMap: Free open-source map with zero API key and zero watermarks
   static const String streetUrl =
-      'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
-
-  /// OpenStreetMap standard fallback
-  static const String osmFallbackUrl =
       'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+
+  /// Esri World Street Map: Clean fallback layer, zero API key required
+  static const String streetFallbackUrl =
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
 
   /// ArcGIS World Imagery for satellite view
   static const String satelliteUrl =
@@ -19,7 +18,7 @@ class AppMapTiles {
   /// User Agent matching the Android applicationId
   static const String userAgentPackage = 'com.trackmyphone.gps';
 
-  /// Factory helper that produces a reliable TileLayer with fallback
+  /// Factory helper that produces a clean TileLayer with zero watermarks & zero API keys
   static TileLayer buildTileLayer({bool isSatellite = false}) {
     if (isSatellite) {
       return TileLayer(
@@ -31,9 +30,9 @@ class AppMapTiles {
     }
     return TileLayer(
       urlTemplate: streetUrl,
-      fallbackUrl: osmFallbackUrl,
+      fallbackUrl: streetFallbackUrl,
       userAgentPackageName: userAgentPackage,
-      maxZoom: 20.0,
+      maxZoom: 19.0,
     );
   }
 }
