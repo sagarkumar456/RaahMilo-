@@ -524,7 +524,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                 );
               }
 
-              // 3. End Stoppage Marker ("na end stopage banana hai")
+              // 3. End Stoppage Marker
               final endStop = trip.endStoppage ??
                   StoppageModel(
                     stopNumber: trip.stoppages.length + 1,
@@ -548,45 +548,49 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                   ),
                 ),
               );
-
-              // 4. Parked Vehicle Marker at final destination
-              markers.add(
-                Marker(
-                  point: tPoints.last,
-                  width: 44,
-                  height: 44,
-                  alignment: Alignment.center,
-                  child: VehicleMarkerWidget(
-                    vehicleType: trip.vehicleTypeEnum,
-                    isLive: false,
-                    isMoving: false,
-                    size: 36.0,
-                    showBadge: false,
-                  ),
-                ),
-              );
             }
           }
 
-          // Also show current device position marker when viewing completed trips
-          if (pos != null) {
-            final markerPoint = _animatedMarkerCoord ?? currentCoord;
+          // Single vehicle marker on map (prevents duplicate vehicle icons)
+          final vehiclePos = pos != null ? (_animatedMarkerCoord ?? currentCoord) : null;
+          if (vehiclePos != null) {
             markers.add(
               Marker(
-                point: markerPoint,
-                width: 48,
-                height: 48,
+                point: vehiclePos,
+                width: 58,
+                height: 58,
                 alignment: Alignment.center,
                 child: VehicleMarkerWidget(
                   vehicleType: currentVehicle,
                   speedText: null,
                   isLive: false,
                   isMoving: false,
-                  size: 38.0,
+                  size: 42.0,
                   showBadge: false,
                 ),
               ),
             );
+          } else if (dayTrips.isNotEmpty) {
+            final lastTripPts = dayTrips.last.points;
+            if (lastTripPts.isNotEmpty) {
+              final lastPt = ll.LatLng(lastTripPts.last.latitude, lastTripPts.last.longitude);
+              markers.add(
+                Marker(
+                  point: lastPt,
+                  width: 58,
+                  height: 58,
+                  alignment: Alignment.center,
+                  child: VehicleMarkerWidget(
+                    vehicleType: dayTrips.last.vehicleTypeEnum,
+                    speedText: null,
+                    isLive: false,
+                    isMoving: false,
+                    size: 42.0,
+                    showBadge: false,
+                  ),
+                ),
+              );
+            }
           }
         } else {
           // Live tracking mode
@@ -624,7 +628,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             arrowMarkers.addAll(buildDirectionalArrowMarkers(routePoints, routeColor: const Color(0xFF10B981)));
           }
 
-          if (routePoints.isNotEmpty) {
+          if (routePoints.length >= 2) {
             final liveTripPoints = trackingService.tripPoints;
             final tripStartTime = trackingService.began ??
                 (liveTripPoints.isNotEmpty ? liveTripPoints.first.timestamp : DateTime.now());
