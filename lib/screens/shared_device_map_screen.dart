@@ -19,6 +19,7 @@ class SharedDeviceMapScreen extends StatefulWidget {
 
 class _SharedDeviceMapScreenState extends State<SharedDeviceMapScreen> {
   final MapController _mapController = MapController();
+  bool _isMapReady = false;
   bool _isSatellite = false;
   late SharedDeviceModel _currentDevice;
 
@@ -28,19 +29,32 @@ class _SharedDeviceMapScreenState extends State<SharedDeviceMapScreen> {
     _currentDevice = widget.initialDevice;
   }
 
+  void _safeMoveMap(ll.LatLng center, double zoom) {
+    if (!_isMapReady) return;
+    try {
+      _mapController.move(center, zoom);
+    } catch (_) {}
+  }
+
   void _zoomIn() {
-    final currentZoom = _mapController.camera.zoom;
-    _mapController.move(_mapController.camera.center, currentZoom + 1);
+    if (!_isMapReady) return;
+    try {
+      final currentZoom = _mapController.camera.zoom;
+      _safeMoveMap(_mapController.camera.center, currentZoom + 1);
+    } catch (_) {}
   }
 
   void _zoomOut() {
-    final currentZoom = _mapController.camera.zoom;
-    _mapController.move(_mapController.camera.center, currentZoom - 1);
+    if (!_isMapReady) return;
+    try {
+      final currentZoom = _mapController.camera.zoom;
+      _safeMoveMap(_mapController.camera.center, currentZoom - 1);
+    } catch (_) {}
   }
 
   void _recenter() {
     final target = ll.LatLng(_currentDevice.latitude, _currentDevice.longitude);
-    _mapController.move(target, 16.5);
+    _safeMoveMap(target, 16.5);
   }
 
   void _toggleMapLayer() {
@@ -101,6 +115,9 @@ class _SharedDeviceMapScreenState extends State<SharedDeviceMapScreen> {
                   initialZoom: 16.5,
                   minZoom: 3.0,
                   maxZoom: 19.0,
+                  onMapReady: () {
+                    if (mounted) setState(() => _isMapReady = true);
+                  },
                 ),
                 children: [
                   AppMapTiles.buildTileLayer(isSatellite: _isSatellite),

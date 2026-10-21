@@ -24,6 +24,7 @@ class TripDetailsScreen extends StatefulWidget {
 
 class _TripDetailsScreenState extends State<TripDetailsScreen> {
   final MapController _mapController = MapController();
+  bool _isMapReady = false;
   bool _isPlaying = false;
   double _sliderValue = 0.5;
   int _playbackSpeed = 1; // 1x, 2x, 4x
@@ -31,6 +32,22 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   late List<TripPoint> _points;
   List<StoppageModel> get _stoppages => extractStoppages(_points);
+
+  void _safeMoveMap(ll.LatLng center, double zoom) {
+    if (!_isMapReady) return;
+    try {
+      _mapController.move(center, zoom);
+    } catch (_) {}
+  }
+
+  double get _safeZoom {
+    if (!_isMapReady) return 14.8;
+    try {
+      return _mapController.camera.zoom;
+    } catch (_) {
+      return 14.8;
+    }
+  }
 
   @override
   void initState() {
@@ -61,7 +78,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           _points = pts;
         });
         if (pts.isNotEmpty) {
-          _mapController.move(ll.LatLng(pts.first.latitude, pts.first.longitude), 15.0);
+          _safeMoveMap(ll.LatLng(pts.first.latitude, pts.first.longitude), 15.0);
         }
       }
     } catch (_) {}
@@ -115,9 +132,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     if (_points.isEmpty) return;
     final index = ((_points.length - 1) * _sliderValue).round().clamp(0, _points.length - 1);
     final pt = _points[index];
-    _mapController.move(
+    _safeMoveMap(
       ll.LatLng(pt.latitude, pt.longitude),
-      _mapController.camera.zoom,
+      _safeZoom,
     );
   }
 
@@ -204,6 +221,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             options: MapOptions(
               initialCenter: currentPlaybackLL,
               initialZoom: 14.8,
+              onMapReady: () {
+                if (mounted) setState(() => _isMapReady = true);
+              },
             ),
             children: [
               AppMapTiles.buildTileLayer(),
@@ -406,7 +426,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                                 });
                                 _updatePlaybackMarker();
                               }
-                              _mapController.move(st.latLng, 16.5);
+                              _safeMoveMap(st.latLng, 16.5);
                               showStoppageDetailsSheet(context, st);
                             },
                             child: Container(

@@ -16,6 +16,7 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
     with WidgetsBindingObserver {
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
   bool _isProcessing = false;
+  bool _isDismissed = false;
 
   @override
   void initState() {
@@ -26,14 +27,16 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
 
   @override
   void dispose() {
+    _isDismissed = true;
     _serviceStatusSub?.cancel();
+    _serviceStatusSub = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   void _listenToServiceStatus() {
     _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) async {
-      if (status == ServiceStatus.enabled && mounted) {
+      if (status == ServiceStatus.enabled && mounted && !_isDismissed) {
         _handleLocationRestored();
       }
     });
@@ -41,21 +44,32 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    if (state == AppLifecycleState.resumed && !_isDismissed) {
       _checkLocationOnResume();
     }
   }
 
   Future<void> _checkLocationOnResume() async {
+    if (_isDismissed || !mounted) return;
     final enabled = await Geolocator.isLocationServiceEnabled();
-    if (enabled && mounted) {
+    if (enabled && mounted && !_isDismissed) {
       _handleLocationRestored();
     }
   }
 
   void _handleLocationRestored() {
+    if (_isDismissed || !mounted) return;
+    _isDismissed = true;
+    _serviceStatusSub?.cancel();
+    _serviceStatusSub = null;
+
     widget.onLocationEnabled?.call();
-    Navigator.of(context).pop(true);
+
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop(true);
+    }
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Row(
@@ -71,8 +85,19 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
     );
   }
 
+  void _safeClose() {
+    if (_isDismissed || !mounted) return;
+    _isDismissed = true;
+    _serviceStatusSub?.cancel();
+    _serviceStatusSub = null;
+    final nav = Navigator.of(context);
+    if (nav.canPop()) {
+      nav.pop(false);
+    }
+  }
+
   Future<void> _enableLocation() async {
-    if (_isProcessing) return;
+    if (_isProcessing || _isDismissed) return;
     setState(() => _isProcessing = true);
 
     try {
@@ -91,7 +116,7 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
       }
 
       final nowEnabled = await Geolocator.isLocationServiceEnabled();
-      if (nowEnabled && mounted) {
+      if (nowEnabled && mounted && !_isDismissed) {
         _handleLocationRestored();
       }
     } catch (e) {
@@ -107,19 +132,25 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
+    return PopScope(
+      canPop: !_isProcessing,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _safeClose();
+      },
+      child: Scaffold(
         backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.navyDark),
-          onPressed: () => Navigator.pop(context),
-        ),
-        centerTitle: true,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20, color: AppColors.navyDark),
+            onPressed: _safeClose,
+          ),
+          centerTitle: true,
+          title: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             Image.asset(
               'assets/images/logo_pin.png',
               height: 26,
@@ -309,7 +340,7 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
 
               // 6. Text Button: "Maybe Later"
               TextButton(
-                onPressed: () => Navigator.pop(context),
+                onPressed: _safeClose,
                 child: const Text(
                   'Maybe Later',
                   style: TextStyle(
@@ -352,8 +383,9 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
           ),
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildLocationIllustration() {
     return SizedBox(

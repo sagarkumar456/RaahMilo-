@@ -1,36 +1,18 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core/app_theme.dart';
-import 'firebase_options.dart';
 import 'screens/splash_screen.dart';
-import 'services/tracking_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Set system UI style (transparent status bar, dark icons)
+  // Set system UI style (transparent status bar, light icons for dark navy splash)
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.dark,
+      statusBarIconBrightness: Brightness.light,
     ),
   );
-
-  // Initialize Firebase with fallback tolerance
-  try {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
-  } catch (e) {
-    debugPrint('Firebase initialization notice: $e');
-  }
-
-  // Restore history and active tracking session if app was cleared from recents or phone rebooted
-  try {
-    await trackingService.loadHistory();
-    await trackingService.restoreActiveSession();
-  } catch (_) {}
 
   runApp(const RaahMiloApp());
 }

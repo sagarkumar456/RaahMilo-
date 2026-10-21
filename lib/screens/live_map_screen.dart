@@ -30,6 +30,7 @@ class LiveMapScreen extends StatefulWidget {
 
 class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateMixin {
   final MapController _mapController = MapController();
+  bool _isMapReady = false;
   bool _isSatellite = false;
   bool _isLocationEnabled = true;
   bool _isSheetCollapsed = false;
@@ -48,6 +49,24 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   ll.LatLng? _prevMarkerCoord;
   AnimationController? _markerMoveController;
   Animation<double>? _markerMoveAnimation;
+
+  void _safeMoveMap(ll.LatLng center, double zoom) {
+    if (!_isMapReady) return;
+    try {
+      _mapController.move(center, zoom);
+    } catch (e) {
+      debugPrint('MapController safe move notice: $e');
+    }
+  }
+
+  double get _safeZoom {
+    if (!_isMapReady) return 16.0;
+    try {
+      return _mapController.camera.zoom;
+    } catch (_) {
+      return 16.0;
+    }
+  }
 
   @override
   void initState() {
@@ -72,33 +91,19 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
 
         // Auto-follow map camera during live tracking so the map glides smoothly with the car
         if (_isAutoFollowEnabled && trackingService.active && !_isViewingHistoryDate) {
-          _mapController.move(interp, _mapController.camera.zoom);
+          _safeMoveMap(interp, _safeZoom);
         }
       }
     });
 
     trackingService.addListener(_onTrackingUpdate);
     _checkLocationServiceStatus();
-    _initDeviceLocation();
 
-    // If today already has completed trips and tracking is not currently active,
-    // display today's path by default on initial map load!
     final today = DateTime.now();
     final todayTrips = trackingService.getTripsForDate(today, vehicleFilter: _selectedVehicleFilter);
     if (todayTrips.isNotEmpty && !trackingService.active) {
       _isViewingHistoryDate = true;
       _hasAutoFittedInitialRoute = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          final pts = todayTrips
-              .expand((t) => t.points)
-              .map((p) => ll.LatLng(p.latitude, p.longitude))
-              .toList();
-          if (pts.isNotEmpty) {
-            _fitRouteBounds(pts);
-          }
-        }
-      });
     }
   }
 
@@ -110,7 +115,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         _targetMarkerCoord = newCoord;
         _animatedMarkerCoord = newCoord;
         if (_isAutoFollowEnabled && trackingService.active && !_isViewingHistoryDate) {
-          _mapController.move(newCoord, _mapController.camera.zoom);
+          _safeMoveMap(newCoord, _safeZoom);
         }
       } else if (_targetMarkerCoord!.latitude != newCoord.latitude ||
                  _targetMarkerCoord!.longitude != newCoord.longitude) {
@@ -133,10 +138,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             .expand((t) => t.points)
             .map((p) => ll.LatLng(p.latitude, p.longitude))
             .toList();
-        if (pts.isNotEmpty && mounted) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _fitRouteBounds(pts);
-          });
+        if (pts.isNotEmpty && mounted && _isMapReady) {
+          _fitRouteBounds(pts);
         }
       }
     }
@@ -156,8 +159,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     });
     _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
       if (mounted) {
-        setState(() => _isLocationEnabled = status == ServiceStatus.enabled);
-        if (status == ServiceStatus.enabled) {
+        final isEnabled = status == ServiceStatus.enabled;
+        setState(() => _isLocationEnabled = isEnabled);
+        if (isEnabled) {
           _initDeviceLocation();
         }
       }
@@ -175,27 +179,33 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     if (pos != null) {
       geocodingService.updateFromPosition(pos.latitude, pos.longitude);
       if (!hasRouteToShow) {
-        _mapController.move(ll.LatLng(pos.latitude, pos.longitude), 16.0);
+        _safeMoveMap(ll.LatLng(pos.latitude, pos.longitude), 16.0);
       }
     } else {
       final p = await trackingService.initCurrentLocation();
       if (p != null && mounted) {
         geocodingService.updateFromPosition(p.latitude, p.longitude);
         if (!hasRouteToShow) {
-          _mapController.move(ll.LatLng(p.latitude, p.longitude), 16.0);
+          _safeMoveMap(ll.LatLng(p.latitude, p.longitude), 16.0);
         }
       }
     }
   }
 
   void _zoomIn() {
-    final currentZoom = _mapController.camera.zoom;
-    _mapController.move(_mapController.camera.center, currentZoom + 1);
+    if (!_isMapReady) return;
+    try {
+      final currentZoom = _mapController.camera.zoom;
+      _safeMoveMap(_mapController.camera.center, currentZoom + 1);
+    } catch (_) {}
   }
 
   void _zoomOut() {
-    final currentZoom = _mapController.camera.zoom;
-    _mapController.move(_mapController.camera.center, currentZoom - 1);
+    if (!_isMapReady) return;
+    try {
+      final currentZoom = _mapController.camera.zoom;
+      _safeMoveMap(_mapController.camera.center, currentZoom - 1);
+    } catch (_) {}
   }
 
   Future<void> _recenter() async {
@@ -218,7 +228,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
       pos = await trackingService.initCurrentLocation();
     }
     if (pos != null) {
-      _mapController.move(ll.LatLng(pos.latitude, pos.longitude), 16.5);
+      _safeMoveMap(ll.LatLng(pos.latitude, pos.longitude), 16.5);
     }
   }
 
@@ -279,9 +289,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   }
 
   void _fitRouteBounds(List<ll.LatLng> points) {
-    if (points.isEmpty) return;
+    if (!_isMapReady || points.isEmpty) return;
     if (points.length == 1) {
-      _mapController.move(points.first, 16.0);
+      _safeMoveMap(points.first, 16.0);
       return;
     }
     try {
@@ -298,18 +308,20 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         ),
       );
     } catch (_) {
-      double minLat = points.first.latitude;
-      double maxLat = points.first.latitude;
-      double minLng = points.first.longitude;
-      double maxLng = points.first.longitude;
-      for (final p in points) {
-        if (p.latitude < minLat) minLat = p.latitude;
-        if (p.latitude > maxLat) maxLat = p.latitude;
-        if (p.longitude < minLng) minLng = p.longitude;
-        if (p.longitude > maxLng) maxLng = p.longitude;
-      }
-      final center = ll.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
-      _mapController.move(center, 15.0);
+      try {
+        double minLat = points.first.latitude;
+        double maxLat = points.first.latitude;
+        double minLng = points.first.longitude;
+        double maxLng = points.first.longitude;
+        for (final p in points) {
+          if (p.latitude < minLat) minLat = p.latitude;
+          if (p.latitude > maxLat) maxLat = p.latitude;
+          if (p.longitude < minLng) minLng = p.longitude;
+          if (p.longitude > maxLng) maxLng = p.longitude;
+        }
+        final center = ll.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+        _safeMoveMap(center, 15.0);
+      } catch (_) {}
     }
   }
 
@@ -735,6 +747,25 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                   initialZoom: pos != null ? 16.0 : 5.0,
                   minZoom: 3.0,
                   maxZoom: 19.0,
+                  onMapReady: () {
+                    if (mounted) {
+                      setState(() => _isMapReady = true);
+                      _initDeviceLocation();
+                      final dayTrips = trackingService.getTripsForDate(
+                        _selectedDate,
+                        vehicleFilter: _selectedVehicleFilter,
+                      );
+                      if (dayTrips.isNotEmpty && !trackingService.active) {
+                        final pts = dayTrips
+                            .expand((t) => t.points)
+                            .map((p) => ll.LatLng(p.latitude, p.longitude))
+                            .toList();
+                        if (pts.isNotEmpty) {
+                          _fitRouteBounds(pts);
+                        }
+                      }
+                    }
+                  },
                   onPositionChanged: (camera, hasGesture) {
                     if (hasGesture && _isAutoFollowEnabled) {
                       setState(() => _isAutoFollowEnabled = false);
@@ -1087,7 +1118,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                   final chipColor = isEnd ? const Color(0xFFDC2626) : const Color(0xFFF59E0B);
                   return GestureDetector(
                     onTap: () {
-                      _mapController.move(st.latLng, 17.0);
+                      _safeMoveMap(st.latLng, 17.0);
                       showStoppageDetailsSheet(context, st);
                     },
                     child: Container(

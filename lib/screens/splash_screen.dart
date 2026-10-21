@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../core/app_colors.dart';
+import '../firebase_options.dart';
 import '../services/auth_service.dart';
+import '../services/tracking_service.dart';
 import 'home_shell.dart';
 import 'welcome_screen.dart';
 
@@ -15,7 +19,7 @@ class SplashScreen extends StatefulWidget {
 class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _pulseAnimation;
-  Timer? _navTimer;
+  bool _isNavigating = false;
 
   @override
   void initState() {
@@ -29,11 +33,46 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
     );
 
-    _navTimer = Timer(const Duration(seconds: 2), _navigateNext);
+    _initAndNavigate();
+  }
+
+  Future<void> _initAndNavigate() async {
+    final minSplashDuration = Future.delayed(const Duration(milliseconds: 1800));
+
+    // Initialize Firebase in background
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } catch (e) {
+      debugPrint('Firebase initialization notice: $e');
+    }
+
+    // Load local history & active session
+    try {
+      await trackingService.loadHistory();
+      await trackingService.restoreActiveSession();
+    } catch (e) {
+      debugPrint('History load notice: $e');
+    }
+
+    await minSplashDuration;
+    if (!mounted) return;
+    _navigateNext();
   }
 
   void _navigateNext() {
-    if (!mounted) return;
+    if (!mounted || _isNavigating) return;
+    _isNavigating = true;
+
+    // Reset status bar icons to dark for the main app UI
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.dark,
+      ),
+    );
+
     if (authService.isAuthenticated) {
       Navigator.pushReplacement(
         context,
@@ -49,7 +88,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
   @override
   void dispose() {
-    _navTimer?.cancel();
     _animController.dispose();
     super.dispose();
   }

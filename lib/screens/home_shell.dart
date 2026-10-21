@@ -73,11 +73,16 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const LocationDisabledScreen(),
+        builder: (_) => LocationDisabledScreen(
+          onLocationEnabled: () {
+            if (mounted) setState(() {});
+          },
+        ),
         fullscreenDialog: true,
       ),
     ).then((_) {
       _isLocationSheetShowing = false;
+      if (mounted) setState(() {});
     });
   }
 
@@ -97,7 +102,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           canPop: false,
           onPopInvokedWithResult: (didPop, _) {
             if (didPop) return;
-            SystemNavigator.pop();
+            // Only exit app if HomeShell itself is currently the top/active route
+            if (ModalRoute.of(context)?.isCurrent ?? true) {
+              SystemNavigator.pop();
+            }
           },
           child: Scaffold(
             backgroundColor: Colors.white,

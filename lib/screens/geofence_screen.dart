@@ -15,6 +15,7 @@ class GeofenceScreen extends StatefulWidget {
 
 class _GeofenceScreenState extends State<GeofenceScreen> {
   final MapController _mapController = MapController();
+  bool _isMapReady = false;
   final _nameController = TextEditingController(text: 'Home');
   double _radius = 500.0;
   bool _notifyOnEntryExit = true;
@@ -79,7 +80,11 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
                   final pos = trackingService.current;
                   if (pos != null) {
                     setState(() => _center = ll.LatLng(pos.latitude, pos.longitude));
-                    _mapController.move(_center, 15.0);
+                    if (_isMapReady) {
+                      try {
+                        _mapController.move(_center, 15.0);
+                      } catch (_) {}
+                    }
                   }
                 },
               ),
@@ -93,6 +98,9 @@ class _GeofenceScreenState extends State<GeofenceScreen> {
                 options: MapOptions(
                   initialCenter: _center,
                   initialZoom: 15.0,
+                  onMapReady: () {
+                    if (mounted) setState(() => _isMapReady = true);
+                  },
                   onTap: (tapPosition, point) {
                     setState(() => _center = point);
                   },
