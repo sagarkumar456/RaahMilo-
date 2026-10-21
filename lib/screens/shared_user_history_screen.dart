@@ -353,6 +353,8 @@ class _SharedUserHistoryScreenState extends State<SharedUserHistoryScreen> {
                 options: MapOptions(
                   initialCenter: ll.LatLng(dev.latitude, dev.longitude),
                   initialZoom: 14.5,
+                  minZoom: 3.0,
+                  maxZoom: 18.5,
                   interactionOptions: const InteractionOptions(
                     flags: InteractiveFlag.none,
                   ),

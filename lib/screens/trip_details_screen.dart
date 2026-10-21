@@ -110,11 +110,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         _mapController.fitCamera(
           CameraFit.bounds(
             bounds: bounds,
-            padding: const EdgeInsets.only(top: 80, bottom: 280, left: 45, right: 45),
+            padding: const EdgeInsets.only(top: 60, bottom: 220, left: 36, right: 36),
+            maxZoom: 16.5,
+            minZoom: 4.0,
           ),
         );
       } else if (activeList.isNotEmpty) {
-        _mapController.move(activeList.first, 15.5);
+        _mapController.move(activeList.first, 15.0);
       }
     } catch (_) {}
   }
@@ -290,7 +292,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               mapController: _mapController,
               options: MapOptions(
                 initialCenter: currentPlaybackLL,
-                initialZoom: 14.8,
+                initialZoom: 15.0,
+                minZoom: 3.0,
+                maxZoom: 18.5,
                 interactionOptions: const InteractionOptions(
                   flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
                   pinchZoomThreshold: 0.1,
@@ -300,7 +304,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 initialCameraFit: displayRoute.length >= 2
                     ? CameraFit.bounds(
                         bounds: LatLngBounds.fromPoints(displayRoute),
-                        padding: const EdgeInsets.only(top: 80, bottom: 280, left: 45, right: 45),
+                        padding: const EdgeInsets.only(top: 60, bottom: 220, left: 36, right: 36),
+                        maxZoom: 16.5,
+                        minZoom: 4.0,
                       )
                     : null,
                 onMapReady: () {
@@ -308,7 +314,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                     setState(() => _isMapReady = true);
                     // Ensure tiles load immediately after page transition without waiting for user touch
                     WidgetsBinding.instance.addPostFrameCallback((_) {
-                      Future.delayed(const Duration(milliseconds: 150), () {
+                      Future.delayed(const Duration(milliseconds: 100), () {
                         if (mounted) _fitTripBounds();
                       });
                     });

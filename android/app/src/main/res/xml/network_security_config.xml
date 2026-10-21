@@ -4,20 +4,23 @@
     <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
+            <certificates src="user" />
         </trust-anchors>
     </base-config>
 
-    <!-- Strictly enforce secure HTTPS and valid TLS for all app endpoints -->
+    <!-- Strictly enforce secure HTTPS and valid TLS for all app endpoints and tile providers -->
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">api.raahmilo.com</domain>
-        <domain includeSubdomains="true">router.project-osrm.org</domain>
-        <domain includeSubdomains="true">tile.openstreetmap.org</domain>
-        <domain includeSubdomains="true">nominatim.openstreetmap.org</domain>
+        <domain includeSubdomains="true">project-osrm.org</domain>
+        <domain includeSubdomains="true">openstreetmap.org</domain>
+        <domain includeSubdomains="true">arcgisonline.com</domain>
+        <domain includeSubdomains="true">cartocdn.com</domain>
         <domain includeSubdomains="true">formsubmit.co</domain>
         <domain includeSubdomains="true">googleapis.com</domain>
         <domain includeSubdomains="true">firebaseio.com</domain>
         <trust-anchors>
             <certificates src="system" />
+            <certificates src="user" />
         </trust-anchors>
     </domain-config>
 </network-security-config>
