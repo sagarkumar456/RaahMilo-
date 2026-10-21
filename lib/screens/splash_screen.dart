@@ -36,8 +36,14 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     _initAndNavigate();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    precacheImage(const AssetImage('assets/images/logo_pin.png'), context);
+  }
+
   Future<void> _initAndNavigate() async {
-    final minSplashDuration = Future.delayed(const Duration(milliseconds: 1800));
+    final minSplashDuration = Future.delayed(const Duration(milliseconds: 900));
 
     // Initialize Firebase in background
     try {
