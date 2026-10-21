@@ -5,11 +5,17 @@ import '../models/stoppage_model.dart';
 class StoppageMarkerWidget extends StatelessWidget {
   final StoppageModel stoppage;
   final VoidCallback onTap;
+  final Color? customColor;
+  final String? customLabel;
+  final IconData? customIcon;
 
   const StoppageMarkerWidget({
     super.key,
     required this.stoppage,
     required this.onTap,
+    this.customColor,
+    this.customLabel,
+    this.customIcon,
   });
 
   @override
@@ -21,6 +27,7 @@ class StoppageMarkerWidget extends StatelessWidget {
   }
 
   Widget _buildIntermediateStopMarker() {
+    final stopColor = customColor ?? const Color(0xFFF59E0B);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -33,7 +40,7 @@ class StoppageMarkerWidget extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
               margin: const EdgeInsets.only(bottom: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFFF59E0B), // Amber
+                color: stopColor,
                 borderRadius: BorderRadius.circular(6),
                 boxShadow: const [
                   BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
@@ -55,7 +62,7 @@ class StoppageMarkerWidget extends StatelessWidget {
             width: 28,
             height: 28,
             decoration: BoxDecoration(
-              color: const Color(0xFFF59E0B),
+              color: stopColor,
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: const [
@@ -79,26 +86,28 @@ class StoppageMarkerWidget extends StatelessWidget {
   }
 
   Widget _buildEndStopMarker() {
+    final endColor = customColor ?? const Color(0xFFDC2626);
+    final labelText = customLabel ?? 'END STOP';
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // "END STOP" Badge
+          // Badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             margin: const EdgeInsets.only(bottom: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFFDC2626), // Crimson Red
+              color: endColor,
               borderRadius: BorderRadius.circular(6),
               boxShadow: const [
                 BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
               ],
             ),
-            child: const Text(
-              'END STOP',
-              style: TextStyle(
+            child: Text(
+              labelText,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 8.5,
                 fontWeight: FontWeight.w900,
@@ -112,15 +121,15 @@ class StoppageMarkerWidget extends StatelessWidget {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: const Color(0xFFDC2626),
+              color: endColor,
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: const [
                 BoxShadow(color: Colors.black38, blurRadius: 5, offset: Offset(0, 2)),
               ],
             ),
-            child: const Icon(
-              Icons.flag_rounded,
+            child: Icon(
+              customIcon ?? Icons.flag_rounded,
               color: Colors.white,
               size: 18,
             ),
@@ -135,15 +144,24 @@ class StoppageMarkerWidget extends StatelessWidget {
 class StartOriginMarkerWidget extends StatelessWidget {
   final DateTime startedAt;
   final VoidCallback onTap;
+  final Color? color;
+  final String? label;
+  final IconData? icon;
 
   const StartOriginMarkerWidget({
     super.key,
     required this.startedAt,
     required this.onTap,
+    this.color,
+    this.label,
+    this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
+    final startColor = color ?? AppColors.success;
+    final badgeLabel = label ?? 'START';
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -154,15 +172,15 @@ class StartOriginMarkerWidget extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
             margin: const EdgeInsets.only(bottom: 2),
             decoration: BoxDecoration(
-              color: AppColors.success,
+              color: startColor,
               borderRadius: BorderRadius.circular(6),
               boxShadow: const [
                 BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
               ],
             ),
-            child: const Text(
-              'START',
-              style: TextStyle(
+            child: Text(
+              badgeLabel,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 8.5,
                 fontWeight: FontWeight.w900,
@@ -174,15 +192,15 @@ class StartOriginMarkerWidget extends StatelessWidget {
             width: 30,
             height: 30,
             decoration: BoxDecoration(
-              color: AppColors.success,
+              color: startColor,
               shape: BoxShape.circle,
               border: Border.all(color: Colors.white, width: 2),
               boxShadow: const [
                 BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 2)),
               ],
             ),
-            child: const Icon(
-              Icons.trip_origin_rounded,
+            child: Icon(
+              icon ?? Icons.trip_origin_rounded,
               color: Colors.white,
               size: 16,
             ),

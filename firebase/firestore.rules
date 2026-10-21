@@ -1,22 +1,72 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() { return request.auth != null; }
-    function owner() { return signedIn() && resource.data.ownerId == request.auth.uid; }
-    function allowed() { return signedIn() && (resource.data.ownerId == request.auth.uid || request.auth.uid in resource.data.viewerIds || (request.auth.token.email != null && request.auth.token.email in resource.data.viewerIds)); }
+    // Helper authentication functions
+    function signedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isOwner(ownerId) {
+      return signedIn() && request.auth.uid == ownerId;
+    }
+
+    function isViewer(viewerList) {
+      return signedIn() && (
+        request.auth.uid in viewerList ||
+        (request.auth.token.email != null && request.auth.token.email in viewerList)
+      );
+    }
+
+    function isTripAllowed() {
+      return signedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        isViewer(resource.data.viewerIds)
+      );
+    }
+
+    // Trips collection: only owner and authorized viewers can read or interact
     match /trips/{tripId} {
       allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if signedIn();
-      allow update: if signedIn() && (resource.data.ownerId == request.auth.uid || allowed());
-      allow delete: if owner();
+      allow read: if isTripAllowed();
+      allow update: if signedIn() && (resource.data.ownerId == request.auth.uid || isTripAllowed());
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+
       match /points/{pointId} {
-        allow read: if signedIn();
+        allow read: if signedIn() && (
+          get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid ||
+          isViewer(get(/databases/$(database)/documents/trips/$(tripId)).data.viewerIds)
+        );
         allow create: if signedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid;
         allow update, delete: if false;
       }
     }
+
+    // Device Shares: only creator and target recipient can view or accept
     match /device_shares/{shareId} {
-      allow read, write: if signedIn();
+      allow read: if signedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.sharedWithUid == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.sharedWithEmail == request.auth.token.email)
+      );
+      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if signedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        resource.data.sharedWithUid == request.auth.uid ||
+        (request.auth.token.email != null && resource.data.sharedWithEmail == request.auth.token.email)
+      );
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Notifications: isolated per user
+    match /notifications/{notifId} {
+      allow read, write: if signedIn() && (
+        resource == null || resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid
+      );
+    }
+
+    // Deny all other collections by default
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

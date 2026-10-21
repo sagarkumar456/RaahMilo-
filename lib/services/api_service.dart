@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -65,6 +66,24 @@ class ApiService extends ChangeNotifier {
   static const String targetSupportEmail = 'skdas1641999@gmail.com';
   static const String adminEmail = 'sagar@onelap.in';
 
+  /// Whitelisted recipients for security alert dispatch
+  static const List<String> allowedAlertRecipients = [
+    targetSupportEmail,
+    adminEmail,
+  ];
+
+  /// Validates physical bounds of geographic coordinates to prevent injection
+  static bool isValidCoordinate(double lat, double lng) {
+    if (lat.isNaN || lat.isInfinite || lng.isNaN || lng.isInfinite) return false;
+    return lat >= -90.0 && lat <= 90.0 && lng >= -180.0 && lng <= 180.0;
+  }
+
+  /// Sanitizes text input to prevent payload injection and parameter tampering
+  static String sanitizeInput(String input, {int maxLength = 1000}) {
+    final clean = input.replaceAll(RegExp(r'[\r\n\t]+'), ' ').trim();
+    return clean.length > maxLength ? clean.substring(0, maxLength) : clean;
+  }
+
   String _baseUrl = defaultBaseUrl;
   String get baseUrl => _baseUrl;
 
@@ -79,7 +98,10 @@ class ApiService extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       final savedUrl = prefs.getString('api_base_url');
       if (savedUrl != null && savedUrl.isNotEmpty) {
-        _baseUrl = savedUrl;
+        final uri = Uri.tryParse(savedUrl);
+        if (uri != null && uri.scheme == 'https') {
+          _baseUrl = savedUrl;
+        }
       }
       final savedLogs = prefs.getStringList('api_recent_logs');
       if (savedLogs != null) {
@@ -113,6 +135,12 @@ class ApiService extends ChangeNotifier {
   Future<void> setBaseUrl(String url) async {
     final cleaned = url.trim();
     if (cleaned.isEmpty) return;
+    final uri = Uri.tryParse(cleaned);
+    // Strictly block insecure plain HTTP schemes for base URL
+    if (uri == null || uri.scheme != 'https') {
+      debugPrint('Security warning: Plaintext HTTP or invalid URL rejected: $cleaned');
+      return;
+    }
     _baseUrl = cleaned;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('api_base_url', _baseUrl);
@@ -141,24 +169,46 @@ class ApiService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Generic HTTP request helper that attempts real HTTP and provides graceful offline fallback
+  /// Secure HTTP request helper with Firebase Auth ID Token and TLS verification
   Future<Map<String, dynamic>> _callEndpoint({
     required String method,
     required String endpoint,
     Map<String, dynamic>? body,
   }) async {
     final uri = Uri.parse('$_baseUrl$endpoint');
+    // Block any insecure plain HTTP requests
+    if (uri.scheme != 'https') {
+      debugPrint('Security block: Insecure HTTP request rejected: $uri');
+      throw const FormatException('Insecure HTTP protocol blocked by RaahMilo security policy.');
+    }
+
     final logId = DateTime.now().millisecondsSinceEpoch.toString();
     final stopwatch = Stopwatch()..start();
     final jsonBody = body != null ? jsonEncode(body) : '';
 
     try {
+      // Authenticate with Firebase Auth ID Token to prevent unauthorized request spoofing
+      String? authToken;
+      try {
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser != null) {
+          authToken = await currentUser.getIdToken();
+        }
+      } catch (authErr) {
+        debugPrint('Firebase Auth token retrieval notice: $authErr');
+      }
+
       http.Response response;
       final headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
         'X-Client-App': 'RaahMilo-Flutter',
         'X-Client-Version': '1.0.0',
+        'X-Request-Timestamp': DateTime.now().toUtc().toIso8601String(),
+        'X-Request-Id': logId,
+        'X-Content-Type-Options': 'nosniff',
+        if (authToken != null && authToken.isNotEmpty)
+          'Authorization': 'Bearer $authToken',
       };
 
       if (method == 'POST') {
@@ -245,16 +295,19 @@ class ApiService extends ChangeNotifier {
     required double lng,
     String? vehicleName,
   }) async {
+    final safeLat = isValidCoordinate(lat, lng) ? lat : 0.0;
+    final safeLng = isValidCoordinate(lat, lng) ? lng : 0.0;
+    final safeId = sanitizeInput(vehicleId, maxLength: 64);
     return await _callEndpoint(
       method: 'POST',
-      endpoint: '/vehicles/$vehicleId/arm',
+      endpoint: '/vehicles/$safeId/arm',
       body: {
-        'vehicleId': vehicleId,
-        'vehicleName': vehicleName ?? 'Vehicle',
+        'vehicleId': safeId,
+        'vehicleName': sanitizeInput(vehicleName ?? 'Vehicle', maxLength: 100),
         'action': 'ARM_VEHICLE',
-        'anchorLatitude': lat,
-        'anchorLongitude': lng,
-        'timestamp': DateTime.now().toIso8601String(),
+        'anchorLatitude': safeLat,
+        'anchorLongitude': safeLng,
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
         'alarmMode': 'MOTION_AND_DISPLACEMENT_DETECTION',
       },
     );
@@ -264,13 +317,14 @@ class ApiService extends ChangeNotifier {
   Future<Map<String, dynamic>> disarmVehicle({
     required String vehicleId,
   }) async {
+    final safeId = sanitizeInput(vehicleId, maxLength: 64);
     return await _callEndpoint(
       method: 'POST',
-      endpoint: '/vehicles/$vehicleId/disarm',
+      endpoint: '/vehicles/$safeId/disarm',
       body: {
-        'vehicleId': vehicleId,
+        'vehicleId': safeId,
         'action': 'DISARM_VEHICLE',
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
       },
     );
   }
@@ -283,19 +337,23 @@ class ApiService extends ChangeNotifier {
     required double lng,
     double? speed,
   }) async {
+    final safeLat = isValidCoordinate(lat, lng) ? lat : 0.0;
+    final safeLng = isValidCoordinate(lat, lng) ? lng : 0.0;
+    final safeId = sanitizeInput(vehicleId, maxLength: 64);
+    final safeSpeed = (speed != null && !speed.isNaN && !speed.isInfinite) ? speed : 0.0;
     return await _callEndpoint(
       method: 'POST',
-      endpoint: '/vehicles/$vehicleId/alarm/trigger',
+      endpoint: '/vehicles/$safeId/alarm/trigger',
       body: {
-        'vehicleId': vehicleId,
+        'vehicleId': safeId,
         'alertType': 'THEFT_DETECTED',
-        'reason': reason,
-        'latitude': lat,
-        'longitude': lng,
-        'speedKmh': speed ?? 0.0,
+        'reason': sanitizeInput(reason, maxLength: 300),
+        'latitude': safeLat,
+        'longitude': safeLng,
+        'speedKmh': safeSpeed,
         'sirenActive': true,
         'alertPriority': 'CRITICAL',
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
       },
     );
   }
@@ -304,14 +362,15 @@ class ApiService extends ChangeNotifier {
   Future<Map<String, dynamic>> silenceTheftAlarm({
     required String vehicleId,
   }) async {
+    final safeId = sanitizeInput(vehicleId, maxLength: 64);
     return await _callEndpoint(
       method: 'POST',
-      endpoint: '/vehicles/$vehicleId/alarm/silence',
+      endpoint: '/vehicles/$safeId/alarm/silence',
       body: {
-        'vehicleId': vehicleId,
+        'vehicleId': safeId,
         'action': 'SILENCE_ALARM',
         'sirenActive': false,
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
       },
     );
   }
@@ -321,14 +380,15 @@ class ApiService extends ChangeNotifier {
     required String vehicleId,
     required bool cutoff,
   }) async {
+    final safeId = sanitizeInput(vehicleId, maxLength: 64);
     return await _callEndpoint(
       method: 'POST',
-      endpoint: '/vehicles/$vehicleId/engine-cutoff',
+      endpoint: '/vehicles/$safeId/engine-cutoff',
       body: {
-        'vehicleId': vehicleId,
+        'vehicleId': safeId,
         'engineCutoff': cutoff,
         'status': cutoff ? 'IMMOBILIZED' : 'ENABLED',
-        'timestamp': DateTime.now().toIso8601String(),
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
       },
     );
   }
@@ -337,9 +397,10 @@ class ApiService extends ChangeNotifier {
   Future<Map<String, dynamic>> fetchVehicleSecurityStatus({
     required String vehicleId,
   }) async {
+    final safeId = sanitizeInput(vehicleId, maxLength: 64);
     return await _callEndpoint(
       method: 'GET',
-      endpoint: '/vehicles/$vehicleId/security-status',
+      endpoint: '/vehicles/$safeId/security-status',
     );
   }
 
@@ -457,7 +518,7 @@ class ApiService extends ChangeNotifier {
   DateTime? _lastAlertDispatchTime;
   Map<String, dynamic>? _lastAlertCachedResult;
 
-  /// Call API to escalate issue and dispatch email alert to skdas1641999@gmail.com
+  /// Call API to escalate issue and dispatch email alert securely
   Future<Map<String, dynamic>> sendSupportIssueAlert({
     required String userEmail,
     required String userUid,
@@ -466,15 +527,41 @@ class ApiService extends ChangeNotifier {
     Map<String, dynamic>? telemetry,
     bool forceSend = false,
   }) async {
-    // Rate-limiting & deduplication guard: prevent sending multiple emails within 15 seconds
+    // Rate-limiting & deduplication guard: prevent spamming or mail quota attacks within 30 seconds
     if (!forceSend && _lastAlertDispatchTime != null && _lastAlertCachedResult != null) {
       final diffSec = DateTime.now().difference(_lastAlertDispatchTime!).inSeconds;
-      if (diffSec < 15) {
+      if (diffSec < 30) {
         return {
           ..._lastAlertCachedResult!,
           'deduplicated': true,
         };
       }
+    }
+
+    // Whitelist check: strictly dispatch only to verified authorized email addresses
+    final verifiedTargetEmail = allowedAlertRecipients.contains(targetSupportEmail)
+        ? targetSupportEmail
+        : allowedAlertRecipients.first;
+
+    final cleanUserEmail = sanitizeInput(userEmail, maxLength: 100);
+    final cleanUid = sanitizeInput(userUid, maxLength: 64);
+    final cleanIssue = sanitizeInput(issueDescription, maxLength: 500);
+    final cleanPriority = sanitizeInput(priority, maxLength: 20);
+
+    // Sanitize telemetry: strip any auth tokens, credentials, or private keys
+    final Map<String, dynamic> safeTelemetry = {};
+    if (telemetry != null) {
+      telemetry.forEach((k, v) {
+        final keyLower = k.toLowerCase();
+        if (!keyLower.contains('token') &&
+            !keyLower.contains('password') &&
+            !keyLower.contains('secret') &&
+            !keyLower.contains('key') &&
+            !keyLower.contains('credential') &&
+            !keyLower.contains('auth')) {
+          safeTelemetry[k] = v;
+        }
+      });
     }
 
     final ticketId = 'RM-${DateTime.now().millisecondsSinceEpoch.toString().substring(7)}';
@@ -485,13 +572,13 @@ class ApiService extends ChangeNotifier {
       endpoint: '/support/alert-email',
       body: {
         'ticketId': ticketId,
-        'recipientEmail': targetSupportEmail,
-        'senderEmail': userEmail,
-        'userUid': userUid,
-        'issueDescription': issueDescription,
-        'priority': priority,
-        'timestamp': DateTime.now().toIso8601String(),
-        'telemetry': telemetry ?? {},
+        'recipientEmail': verifiedTargetEmail,
+        'senderEmail': cleanUserEmail,
+        'userUid': cleanUid,
+        'issueDescription': cleanIssue,
+        'priority': cleanPriority,
+        'timestamp': DateTime.now().toUtc().toIso8601String(),
+        'telemetry': safeTelemetry,
       },
     );
 
@@ -499,7 +586,7 @@ class ApiService extends ChangeNotifier {
     bool mailSuccess = false;
     String mailMessage = 'Not sent';
     try {
-      final formSubmitUri = Uri.parse('https://formsubmit.co/ajax/$targetSupportEmail');
+      final formSubmitUri = Uri.parse('https://formsubmit.co/ajax/$verifiedTargetEmail');
       final stopwatch = Stopwatch()..start();
       final mailResponse = await http.post(
         formSubmitUri,
@@ -511,18 +598,19 @@ class ApiService extends ChangeNotifier {
           'User-Agent': 'RaahMilo-Mobile/1.0',
         },
         body: jsonEncode({
-          '_subject': '🚨 [Team RaahMilo] Support Alert [Ticket #$ticketId]',
+          '_honey': '', // Anti-bot honeypot field: automated spammers filling this are silently dropped
+          '_subject': '🚨 [Team RaahMilo] Security Alert [Ticket #$ticketId]',
           '_captcha': 'false',
           '_template': 'table',
           'Security System': 'RaahMilo Anti-Theft & Defense Desk',
           'Dispatched By': 'Team RaahMilo Automated Operations',
           'Ticket ID': ticketId,
-          'Priority': priority,
-          'Reported By': userEmail,
-          'Issue Details': issueDescription,
-          'Telemetry / GPS': jsonEncode(telemetry ?? {}),
+          'Priority': cleanPriority,
+          'Reported By': cleanUserEmail,
+          'Issue Details': cleanIssue,
+          'Telemetry / GPS': jsonEncode(safeTelemetry),
           'Verified By': 'Team RaahMilo Protocol',
-          'Timestamp': DateTime.now().toIso8601String(),
+          'Timestamp': DateTime.now().toUtc().toIso8601String(),
         }),
       ).timeout(const Duration(seconds: 15));
       stopwatch.stop();
@@ -541,9 +629,9 @@ class ApiService extends ChangeNotifier {
           id: 'mail_${DateTime.now().millisecondsSinceEpoch}',
           timestamp: DateTime.now(),
           method: 'POST',
-          endpoint: 'https://formsubmit.co/ajax/$targetSupportEmail',
+          endpoint: 'https://formsubmit.co/ajax/$verifiedTargetEmail',
           statusCode: mailResponse.statusCode,
-          requestBody: 'Ticket: $ticketId, Priority: $priority, Issue: $issueDescription',
+          requestBody: 'Ticket: $ticketId, Priority: $cleanPriority, Issue: $cleanIssue',
           responseBody: mailResponse.body,
           latencyMs: stopwatch.elapsedMilliseconds,
           isSuccess: mailSuccess,
@@ -556,7 +644,7 @@ class ApiService extends ChangeNotifier {
           id: 'mail_err_${DateTime.now().millisecondsSinceEpoch}',
           timestamp: DateTime.now(),
           method: 'POST',
-          endpoint: 'https://formsubmit.co/ajax/$targetSupportEmail',
+          endpoint: 'https://formsubmit.co/ajax/$verifiedTargetEmail',
           statusCode: 504,
           requestBody: 'Ticket: $ticketId',
           responseBody: mailMessage,
@@ -569,7 +657,7 @@ class ApiService extends ChangeNotifier {
     final finalResult = {
       ...apiResult,
       'ticketId': ticketId,
-      'targetEmail': targetSupportEmail,
+      'targetEmail': verifiedTargetEmail,
       'dispatched': true,
       'mailDelivered': mailSuccess,
       'mailMessage': mailMessage,

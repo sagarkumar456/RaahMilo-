@@ -115,6 +115,12 @@ class _SharedDeviceMapScreenState extends State<SharedDeviceMapScreen> {
                   initialZoom: 16.5,
                   minZoom: 3.0,
                   maxZoom: 19.0,
+                  interactionOptions: const InteractionOptions(
+                    flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                    pinchZoomThreshold: 0.1,
+                    pinchMoveThreshold: 8.0,
+                    enableMultiFingerGestureRace: true,
+                  ),
                   onMapReady: () {
                     if (mounted) setState(() => _isMapReady = true);
                   },

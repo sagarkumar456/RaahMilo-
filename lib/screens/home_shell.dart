@@ -218,7 +218,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                     index: _selectedTab,
                     children: [
                       DashboardScreen(onNavigateTab: _switchTab),
-                      const LiveMapScreen(),
+                      LiveMapScreen(isActiveTab: _selectedTab == 1),
                       const TripHistoryScreen(),
                       const ProfileScreen(),
                     ],

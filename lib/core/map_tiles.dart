@@ -26,6 +26,11 @@ class AppMapTiles {
         fallbackUrl: streetUrl,
         userAgentPackageName: userAgentPackage,
         maxZoom: 19.0,
+        maxNativeZoom: 19,
+        keepBuffer: 3,
+        panBuffer: 1,
+        tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 40)),
+        tileUpdateTransformer: TileUpdateTransformers.ignoreTapEvents,
       );
     }
     return TileLayer(
@@ -33,6 +38,11 @@ class AppMapTiles {
       fallbackUrl: streetFallbackUrl,
       userAgentPackageName: userAgentPackage,
       maxZoom: 19.0,
+      maxNativeZoom: 19,
+      keepBuffer: 3,
+      panBuffer: 1,
+      tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 40)),
+      tileUpdateTransformer: TileUpdateTransformers.ignoreTapEvents,
     );
   }
 }

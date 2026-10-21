@@ -7,6 +7,7 @@ import '../core/app_colors.dart';
 import '../core/map_tiles.dart';
 import '../models/stoppage_model.dart';
 import '../models/trip_model.dart';
+import '../services/road_routing_service.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
 import '../widgets/stoppage_marker_widget.dart';
@@ -31,6 +32,10 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   Timer? _playbackTimer;
 
   late List<TripPoint> _points;
+  List<ll.LatLng> _roadPoints = [];
+  double? _roadDistanceMeters;
+  bool _isLoadingRoad = false;
+
   List<StoppageModel> get _stoppages => extractStoppages(_points);
 
   void _safeMoveMap(ll.LatLng center, double zoom) {
@@ -60,7 +65,58 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             TripPoint(latitude: 28.6139, longitude: 77.2090, speed: 25.0, accuracy: 4.0, timestamp: widget.trip.startedAt.add(const Duration(minutes: 20))),
             TripPoint(latitude: 28.6080, longitude: 77.2140, speed: 20.0, accuracy: 4.0, timestamp: widget.trip.startedAt.add(const Duration(minutes: 32))),
           ];
+    _roadPoints = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
     _loadTripPointsFromFirestore();
+    _loadRoadRoute();
+  }
+
+  Future<void> _loadRoadRoute() async {
+    final rawCoords = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
+    if (rawCoords.length < 2) return;
+
+    if (mounted) setState(() => _isLoadingRoad = true);
+
+    try {
+      final snapped = await roadRoutingService.getRoadRoute(
+        tripId: widget.trip.id,
+        points: rawCoords,
+      );
+
+      final dist = roadRoutingService.getRoadDistanceMeters(widget.trip.id);
+
+      if (mounted && snapped.isNotEmpty) {
+        setState(() {
+          _roadPoints = snapped;
+          if (dist != null) _roadDistanceMeters = dist;
+          _isLoadingRoad = false;
+        });
+
+        _fitTripBounds();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isLoadingRoad = false);
+    }
+  }
+
+  void _fitTripBounds() {
+    if (!_isMapReady) return;
+    try {
+      final activeList = _roadPoints.isNotEmpty
+          ? _roadPoints
+          : _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
+
+      if (activeList.length >= 2) {
+        final bounds = LatLngBounds.fromPoints(activeList);
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: bounds,
+            padding: const EdgeInsets.only(top: 80, bottom: 280, left: 45, right: 45),
+          ),
+        );
+      } else if (activeList.isNotEmpty) {
+        _mapController.move(activeList.first, 15.5);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadTripPointsFromFirestore() async {
@@ -76,7 +132,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         final pts = snap.docs.map((d) => TripPoint.fromMap(d.data())).toList();
         setState(() {
           _points = pts;
+          _roadPoints = pts.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
         });
+        _loadRoadRoute();
         if (pts.isNotEmpty) {
           _safeMoveMap(ll.LatLng(pts.first.latitude, pts.first.longitude), 15.0);
         }
@@ -107,7 +165,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         if (_sliderValue >= 1.0) {
           _sliderValue = 0.0;
         } else {
-          _sliderValue += 0.02;
+          _sliderValue += 0.015;
           if (_sliderValue > 1.0) _sliderValue = 1.0;
         }
       });
@@ -129,19 +187,26 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   }
 
   void _updatePlaybackMarker() {
-    if (_points.isEmpty) return;
-    final index = ((_points.length - 1) * _sliderValue).round().clamp(0, _points.length - 1);
-    final pt = _points[index];
-    _safeMoveMap(
-      ll.LatLng(pt.latitude, pt.longitude),
-      _safeZoom,
-    );
+    final activeList = _roadPoints.isNotEmpty
+        ? _roadPoints
+        : _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
+    if (activeList.isEmpty) return;
+    final index = ((activeList.length - 1) * _sliderValue).round().clamp(0, activeList.length - 1);
+    final pt = activeList[index];
+    // Smooth camera panning: avoid moving map constantly during high speed playback to keep framerate ultra smooth
+    if (_playbackSpeed == 1 || index % 2 == 0) {
+      _safeMoveMap(pt, _safeZoom);
+    }
   }
 
   String get _currentTimestampText {
     if (_points.isEmpty) return '08:25 AM';
-    final index = ((_points.length - 1) * _sliderValue).round().clamp(0, _points.length - 1);
-    final time = _points[index].timestamp;
+    final startTime = _points.first.timestamp;
+    final endTime = _points.last.timestamp;
+    final totalSecs = endTime.difference(startTime).inSeconds;
+    final time = totalSecs > 0
+        ? startTime.add(Duration(seconds: (totalSecs * _sliderValue).round()))
+        : startTime;
     final hour = time.hour > 12 ? time.hour - 12 : (time.hour == 0 ? 12 : time.hour);
     final minute = time.minute.toString().padLeft(2, '0');
     final ampm = time.hour >= 12 ? 'PM' : 'AM';
@@ -151,14 +216,18 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final latLngList = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
-    final playbackIndex = _points.isNotEmpty
-        ? ((_points.length - 1) * _sliderValue).round().clamp(0, _points.length - 1)
-        : 0;
-    final currentPlaybackPt = _points.isNotEmpty
-        ? _points[playbackIndex]
-        : TripPoint(latitude: 28.6139, longitude: 77.2090, speed: 0, accuracy: 5, timestamp: DateTime.now());
+    final displayRoute = _roadPoints.isNotEmpty ? _roadPoints : latLngList;
 
-    final currentPlaybackLL = ll.LatLng(currentPlaybackPt.latitude, currentPlaybackPt.longitude);
+    final playbackIndex = displayRoute.isNotEmpty
+        ? ((displayRoute.length - 1) * _sliderValue).round().clamp(0, displayRoute.length - 1)
+        : 0;
+    final currentPlaybackLL = displayRoute.isNotEmpty
+        ? displayRoute[playbackIndex]
+        : (latLngList.isNotEmpty ? latLngList.first : const ll.LatLng(28.6139, 77.2090));
+
+    final heading = (playbackIndex > 0 && displayRoute.length > 1)
+        ? calculateBearing(displayRoute[playbackIndex - 1], displayRoute[playbackIndex])
+        : 0.0;
 
     return Scaffold(
       appBar: AppBar(
@@ -216,37 +285,59 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
       body: Stack(
         children: [
           // 1. OpenStreetMap showing route path & playback position
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: currentPlaybackLL,
-              initialZoom: 14.8,
-              onMapReady: () {
-                if (mounted) setState(() => _isMapReady = true);
-              },
-            ),
-            children: [
-              AppMapTiles.buildTileLayer(),
-              PolylineLayer(
-                polylines: [
-                  // Outer casing / road edge
-                  Polyline(
-                    points: latLngList,
-                    strokeWidth: 7.2,
-                    color: const Color(0xFF10B981).withValues(alpha: 0.25),
-                  ),
-                  // Main route line (Green)
-                  Polyline(
-                    points: latLngList,
-                    strokeWidth: 5.2,
-                    color: const Color(0xFF10B981),
-                  ),
-                ],
+          RepaintBoundary(
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: currentPlaybackLL,
+                initialZoom: 14.8,
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
+                  pinchZoomThreshold: 0.1,
+                  pinchMoveThreshold: 8.0,
+                  enableMultiFingerGestureRace: true,
+                ),
+                initialCameraFit: displayRoute.length >= 2
+                    ? CameraFit.bounds(
+                        bounds: LatLngBounds.fromPoints(displayRoute),
+                        padding: const EdgeInsets.only(top: 80, bottom: 280, left: 45, right: 45),
+                      )
+                    : null,
+                onMapReady: () {
+                  if (mounted) {
+                    setState(() => _isMapReady = true);
+                    // Ensure tiles load immediately after page transition without waiting for user touch
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      Future.delayed(const Duration(milliseconds: 150), () {
+                        if (mounted) _fitTripBounds();
+                      });
+                    });
+                  }
+                },
               ),
+              children: [
+                AppMapTiles.buildTileLayer(),
+                PolylineLayer(
+                  cullingMargin: 20.0,
+                  polylines: [
+                    // Outer casing / road edge
+                    Polyline(
+                      points: displayRoute,
+                      strokeWidth: 7.2,
+                      color: const Color(0xFF10B981).withValues(alpha: 0.25),
+                    ),
+                    // Main route line (Green)
+                    Polyline(
+                      points: displayRoute,
+                      strokeWidth: 5.2,
+                      color: const Color(0xFF10B981),
+                    ),
+                  ],
+                ),
               // Directional arrows embedded along route
               MarkerLayer(
                 markers: buildDirectionalArrowMarkers(
-                  latLngList,
+                  displayRoute,
                   routeColor: const Color(0xFF10B981),
                 ),
               ),
@@ -330,9 +421,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       vehicleType: widget.trip.vehicleTypeEnum,
                       isLive: _isPlaying,
                       isMoving: _isPlaying,
-                      heading: (playbackIndex > 0 && latLngList.length > 1)
-                          ? calculateBearing(latLngList[playbackIndex - 1], latLngList[playbackIndex])
-                          : 0.0,
+                      heading: heading,
                       size: 42.0,
                     ),
                   ),
@@ -340,6 +429,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               ),
             ],
           ),
+        ),
 
           // 2. Playback Bottom Card matching Screen 10
           Positioned(
@@ -364,13 +454,31 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Title & Date
-                  Text(
-                    widget.trip.title,
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.navyDark,
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.trip.title,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.navyDark,
+                          ),
+                        ),
+                      ),
+                      if (_isLoadingRoad)
+                        const Padding(
+                          padding: EdgeInsets.only(left: 8.0),
+                          child: SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF10B981),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -387,7 +495,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                     children: [
                       _statColumn(
                         label: 'Distance',
-                        value: widget.trip.formattedDistance,
+                        value: _roadDistanceMeters != null
+                            ? '${(_roadDistanceMeters! / 1000.0).toStringAsFixed(1)} km'
+                            : widget.trip.formattedDistance,
                       ),
                       _statColumn(
                         label: 'Duration',
@@ -395,7 +505,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       ),
                       _statColumn(
                         label: 'Avg Speed',
-                        value: '${widget.trip.avgSpeedKmh.toStringAsFixed(0)} km/h',
+                        value: _roadDistanceMeters != null
+                            ? '${((_roadDistanceMeters! / 1000.0) / ((widget.trip.endedAt ?? DateTime.now()).difference(widget.trip.startedAt).inSeconds > 0 ? (widget.trip.endedAt ?? DateTime.now()).difference(widget.trip.startedAt).inSeconds / 3600.0 : 1.0)).toStringAsFixed(0)} km/h'
+                            : '${widget.trip.avgSpeedKmh.toStringAsFixed(0)} km/h',
                       ),
                       _statColumn(
                         label: 'Halts',

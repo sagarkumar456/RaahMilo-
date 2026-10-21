@@ -11,11 +11,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/trip_model.dart';
 import '../models/vehicle_type.dart';
 import '../models/app_notification.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'anti_theft_service.dart';
 import 'auth_service.dart';
 import 'geocoding_service.dart';
 import 'geofence_service.dart';
 import 'notification_service.dart';
+import 'road_routing_service.dart';
 import 'share_service.dart';
 
 class TrackingService extends ChangeNotifier {
@@ -26,6 +28,7 @@ class TrackingService extends ChangeNotifier {
     loadHistory();
     restoreActiveSession();
     _restoreSelectedVehicle();
+    initCurrentLocation();
     FirebaseAuth.instance.authStateChanges().listen((user) {
       if (user != null) {
         syncFirestoreHistory();
@@ -145,26 +148,55 @@ class TrackingService extends ChangeNotifier {
 
   Future<Position?> initCurrentLocation() async {
     try {
-      final perm = await Geolocator.checkPermission();
+      var perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
       if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
         return null;
       }
+
+      // Step 1: Immediate warm start with last known location
       final last = await Geolocator.getLastKnownPosition();
-      if (last != null) {
+      if (last != null && _current == null) {
         _current = last;
         geocodingService.updateFromPosition(last.latitude, last.longitude);
         notifyListeners();
       }
-      final current = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 6),
-        ),
-      );
-      _current = current;
-      geocodingService.updateFromPosition(current.latitude, current.longitude);
-      notifyListeners();
-      return current;
+
+      // Step 2: Fresh position using Google Play Services Fused Location
+      Position? current;
+      try {
+        current = await Geolocator.getCurrentPosition(
+          locationSettings: defaultTargetPlatform == TargetPlatform.android
+              ? AndroidSettings(
+                  accuracy: LocationAccuracy.high,
+                  timeLimit: const Duration(seconds: 10),
+                )
+              : const LocationSettings(
+                  accuracy: LocationAccuracy.high,
+                  timeLimit: Duration(seconds: 10),
+                ),
+        );
+      } catch (_) {
+        // Fallback for indoors (where satellite GPS might timeout): use network/Wi-Fi fusion
+        try {
+          current = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.medium,
+              timeLimit: Duration(seconds: 5),
+            ),
+          );
+        } catch (_) {}
+      }
+
+      if (current != null) {
+        _current = current;
+        geocodingService.updateFromPosition(current.latitude, current.longitude);
+        notifyListeners();
+        return current;
+      }
+      return _current;
     } catch (_) {
       return _current;
     }
@@ -278,7 +310,7 @@ class TrackingService extends ChangeNotifier {
 
   Future<void> _onPosition(Position p) async {
     if (!_active || _tripId == null) return;
-    if (p.accuracy > 100) return; // Discard bad fixes
+    if (p.accuracy > 180) return; // Discard bad fixes but tolerate city flyover/metro GPS noise
 
     final isFirstPoint = _tripPoints.isEmpty;
     if (!isFirstPoint) {
@@ -378,9 +410,9 @@ class TrackingService extends ChangeNotifier {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 3,
-        forceLocationManager: true,
-        intervalDuration: const Duration(seconds: 2),
+        distanceFilter: 4,
+        forceLocationManager: false, // Uses Google Play Services FusedLocationProviderClient for continuous background tracking
+        intervalDuration: const Duration(seconds: 3),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: "RaahMilo is Active",
           notificationText: "Live GPS tracking in progress...",
@@ -644,6 +676,14 @@ class TrackingService extends ChangeNotifier {
     _historyTrips.insert(0, completedTrip);
     await _saveLocalHistory();
 
+    // Asynchronously pre-fetch and cache the actual road route for this completed trip
+    if (finalPoints.length >= 2) {
+      roadRoutingService.getRoadRoute(
+        tripId: completedTrip.id,
+        points: finalPoints.map((p) => ll.LatLng(p.latitude, p.longitude)).toList(),
+      );
+    }
+
     // Add Notification for stopped tracking
     NotificationService().addNotification(
       title: 'Tracking Stopped',
@@ -671,6 +711,14 @@ class TrackingService extends ChangeNotifier {
             existingIds.add(trip.id);
           }
         }
+        final now = DateTime.now();
+        // Remove any old sample trips that were placed on today's date
+        _historyTrips.removeWhere((t) =>
+            t.id.startsWith('sample_') &&
+            t.startedAt.year == now.year &&
+            t.startedAt.month == now.month &&
+            t.startedAt.day == now.day);
+
         _historyTrips.sort((a, b) => b.startedAt.compareTo(a.startedAt));
         notifyListeners();
       }
@@ -696,8 +744,8 @@ class TrackingService extends ChangeNotifier {
         title: 'Car Drive to Market',
         ownerId: authService.uid,
         viewerIds: [],
-        startedAt: DateTime(now.year, now.month, now.day, 10, 30),
-        endedAt: DateTime(now.year, now.month, now.day, 11, 15),
+        startedAt: DateTime(now.year, now.month, now.day - 1, 10, 30),
+        endedAt: DateTime(now.year, now.month, now.day - 1, 11, 15),
         distanceMeters: 6400,
         isActive: false,
         vehicleType: 'car',

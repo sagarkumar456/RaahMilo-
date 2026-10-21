@@ -50,16 +50,20 @@ List<Marker> buildDirectionalArrowMarkers(
     totalDistance += approximateDistanceMeters(points[i], points[i + 1]);
   }
 
-  // Spacing: short trips every ~35m, medium every ~65m, long every ~120m
-  final double targetSpacing = totalDistance < 500
-      ? 35.0
-      : totalDistance < 2500
-          ? 65.0
-          : 120.0;
+  // Optimized spacing for buttery smooth 60fps performance:
+  // Short trips (< 1 km): every ~150m (max 6 arrows)
+  // Medium trips (1 - 5 km): every ~350m (max 10 arrows)
+  // Long trips (> 5 km): every ~600m (max 12 arrows)
+  final double targetSpacing = totalDistance < 1000
+      ? 150.0
+      : totalDistance < 5000
+          ? 350.0
+          : 600.0;
 
   double accumulatedDist = 0.0;
 
   for (int i = 0; i < points.length - 1; i++) {
+    if (markers.length >= 12) break; // Hard limit: prevents widget explosion on map
     final from = points[i];
     final to = points[i + 1];
     final segmentDist = approximateDistanceMeters(from, to);
