@@ -7,7 +7,6 @@ import '../core/app_colors.dart';
 import '../core/map_tiles.dart';
 import '../models/stoppage_model.dart';
 import '../models/trip_model.dart';
-import '../services/road_routing_service.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
 import '../widgets/stoppage_marker_widget.dart';
@@ -33,8 +32,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   late List<TripPoint> _points;
   List<ll.LatLng> _roadPoints = [];
-  double? _roadDistanceMeters;
-  bool _isLoadingRoad = false;
 
   List<StoppageModel> get _stoppages => extractStoppages(_points);
 
@@ -57,45 +54,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   @override
   void initState() {
     super.initState();
-    _points = widget.trip.points.isNotEmpty
-        ? widget.trip.points
-        : [
-            TripPoint(latitude: 28.6250, longitude: 77.2050, speed: 18.0, accuracy: 4.0, timestamp: widget.trip.startedAt),
-            TripPoint(latitude: 28.6200, longitude: 77.2080, speed: 22.0, accuracy: 4.0, timestamp: widget.trip.startedAt.add(const Duration(minutes: 10))),
-            TripPoint(latitude: 28.6139, longitude: 77.2090, speed: 25.0, accuracy: 4.0, timestamp: widget.trip.startedAt.add(const Duration(minutes: 20))),
-            TripPoint(latitude: 28.6080, longitude: 77.2140, speed: 20.0, accuracy: 4.0, timestamp: widget.trip.startedAt.add(const Duration(minutes: 32))),
-          ];
+    _points = List<TripPoint>.from(widget.trip.points);
     _roadPoints = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
     _loadTripPointsFromFirestore();
-    _loadRoadRoute();
-  }
-
-  Future<void> _loadRoadRoute() async {
-    final rawCoords = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
-    if (rawCoords.length < 2) return;
-
-    if (mounted) setState(() => _isLoadingRoad = true);
-
-    try {
-      final snapped = await roadRoutingService.getRoadRoute(
-        tripId: widget.trip.id,
-        points: rawCoords,
-      );
-
-      final dist = roadRoutingService.getRoadDistanceMeters(widget.trip.id);
-
-      if (mounted && snapped.isNotEmpty) {
-        setState(() {
-          _roadPoints = snapped;
-          if (dist != null) _roadDistanceMeters = dist;
-          _isLoadingRoad = false;
-        });
-
-        _fitTripBounds();
-      }
-    } catch (_) {
-      if (mounted) setState(() => _isLoadingRoad = false);
-    }
   }
 
   void _fitTripBounds() {
@@ -136,9 +97,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           _points = pts;
           _roadPoints = pts.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
         });
-        _loadRoadRoute();
         if (pts.isNotEmpty) {
-          _safeMoveMap(ll.LatLng(pts.first.latitude, pts.first.longitude), 15.0);
+          _fitTripBounds();
         }
       }
     } catch (_) {}
@@ -218,14 +178,16 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final latLngList = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
-    final displayRoute = _roadPoints.isNotEmpty ? _roadPoints : latLngList;
+    final displayRoute = latLngList;
 
     final playbackIndex = displayRoute.isNotEmpty
         ? ((displayRoute.length - 1) * _sliderValue).round().clamp(0, displayRoute.length - 1)
         : 0;
     final currentPlaybackLL = displayRoute.isNotEmpty
         ? displayRoute[playbackIndex]
-        : (latLngList.isNotEmpty ? latLngList.first : const ll.LatLng(28.6139, 77.2090));
+        : (trackingService.current != null
+            ? ll.LatLng(trackingService.current!.latitude, trackingService.current!.longitude)
+            : const ll.LatLng(20.5937, 78.9629));
 
     final heading = (playbackIndex > 0 && displayRoute.length > 1)
         ? calculateBearing(displayRoute[playbackIndex - 1], displayRoute[playbackIndex])
@@ -472,18 +434,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                           ),
                         ),
                       ),
-                      if (_isLoadingRoad)
-                        const Padding(
-                          padding: EdgeInsets.only(left: 8.0),
-                          child: SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Color(0xFF10B981),
-                            ),
-                          ),
-                        ),
                     ],
                   ),
                   const SizedBox(height: 4),
@@ -501,9 +451,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                     children: [
                       _statColumn(
                         label: 'Distance',
-                        value: _roadDistanceMeters != null
-                            ? '${(_roadDistanceMeters! / 1000.0).toStringAsFixed(1)} km'
-                            : widget.trip.formattedDistance,
+                        value: widget.trip.formattedDistance,
                       ),
                       _statColumn(
                         label: 'Duration',
@@ -511,9 +459,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       ),
                       _statColumn(
                         label: 'Avg Speed',
-                        value: _roadDistanceMeters != null
-                            ? '${((_roadDistanceMeters! / 1000.0) / ((widget.trip.endedAt ?? DateTime.now()).difference(widget.trip.startedAt).inSeconds > 0 ? (widget.trip.endedAt ?? DateTime.now()).difference(widget.trip.startedAt).inSeconds / 3600.0 : 1.0)).toStringAsFixed(0)} km/h'
-                            : '${widget.trip.avgSpeedKmh.toStringAsFixed(0)} km/h',
+                        value: '${widget.trip.avgSpeedKmh.toStringAsFixed(0)} km/h',
                       ),
                       _statColumn(
                         label: 'Halts',

@@ -11,13 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/trip_model.dart';
 import '../models/vehicle_type.dart';
 import '../models/app_notification.dart';
-import 'package:latlong2/latlong.dart' as ll;
 import 'anti_theft_service.dart';
 import 'auth_service.dart';
 import 'geocoding_service.dart';
 import 'geofence_service.dart';
 import 'notification_service.dart';
-import 'road_routing_service.dart';
 import 'share_service.dart';
 
 class TrackingService extends ChangeNotifier {
@@ -310,9 +308,24 @@ class TrackingService extends ChangeNotifier {
 
   Future<void> _onPosition(Position p) async {
     if (!_active || _tripId == null) return;
-    if (p.accuracy > 180) return; // Discard bad fixes but tolerate city flyover/metro GPS noise
 
-    final isFirstPoint = _tripPoints.isEmpty;
+    // Discard fixes with unacceptable accuracy right away.
+    // Clean satellite GPS outdoors is 3-15m; tolerable city/neighborhood is <= 35m.
+    // Anything > 35m is degraded indoor noise, wifi or cell tower triangulation.
+    final bool isFirstPoint = _tripPoints.isEmpty;
+    if (isFirstPoint) {
+      if (p.accuracy > 45.0) return;
+    } else {
+      if (p.accuracy > 35.0) {
+        // Update live status for map marker & anti-theft without polluting the movement path
+        _current = p;
+        geocodingService.updateFromPosition(p.latitude, p.longitude);
+        antiTheftService.checkPositionForTheft(p);
+        notifyListeners();
+        return;
+      }
+    }
+
     if (!isFirstPoint) {
       final lastPoint = _tripPoints.last;
       final step = Geolocator.distanceBetween(
@@ -321,8 +334,41 @@ class TrackingService extends ChangeNotifier {
         p.latitude,
         p.longitude,
       );
-      if (step < 2) return;
-      if (step > 500 && p.timestamp.difference(lastPoint.timestamp).inSeconds < 10) return;
+
+      final timeDiffSec = p.timestamp.difference(lastPoint.timestamp).inSeconds.abs();
+
+      // 1. Minimum physical displacement threshold:
+      // When a phone is stationary, GPS naturally wanders within 2-6m.
+      // Ignore sub-7m micro-fluctuations to prevent stationary spider-webs.
+      if (step < 7.0) {
+        _current = p;
+        geocodingService.updateFromPosition(p.latitude, p.longitude);
+        antiTheftService.checkPositionForTheft(p);
+        notifyListeners();
+        return;
+      }
+
+      // 2. Stationary / Low Speed GPS Drift Filter:
+      final calcSpeed = timeDiffSec > 0 ? (step / timeDiffSec) : p.speed;
+      final effectiveSpeed = (p.speed > 0) ? p.speed : calcSpeed;
+
+      // If speed is below 0.6 m/s (~2.1 km/h) and step is within accuracy circle (< 16m),
+      // it is stationary noise/jitter while sitting or standing still.
+      if (effectiveSpeed < 0.6 && step < 16.0) {
+        _current = p;
+        geocodingService.updateFromPosition(p.latitude, p.longitude);
+        antiTheftService.checkPositionForTheft(p);
+        notifyListeners();
+        return;
+      }
+
+      // 3. Teleportation / Outlier Jump Filter:
+      // Reject impossible GPS leaps (e.g. sudden cell-tower flips)
+      if (timeDiffSec > 0 && calcSpeed > 45.0) return; // > 162 km/h
+      if (step > 120.0 && timeDiffSec <= 3) return;
+      if (step > 500.0 && timeDiffSec < 15) return;
+
+      // Valid true movement! Accumulate real distance
       _meters += step;
     }
 
@@ -410,7 +456,7 @@ class TrackingService extends ChangeNotifier {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 4,
+        distanceFilter: 6, // Prevents OS from firing continuous sub-6m stationary noise
         forceLocationManager: false, // Uses Google Play Services FusedLocationProviderClient for continuous background tracking
         intervalDuration: const Duration(seconds: 3),
         foregroundNotificationConfig: const ForegroundNotificationConfig(
@@ -426,14 +472,14 @@ class TrackingService extends ChangeNotifier {
       return AppleSettings(
         accuracy: LocationAccuracy.high,
         activityType: ActivityType.fitness,
-        distanceFilter: 3,
+        distanceFilter: 6,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
       );
     } else {
       return const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 3,
+        distanceFilter: 6,
       );
     }
   }
@@ -477,22 +523,25 @@ class TrackingService extends ChangeNotifier {
           ? restoredTripPoints.last.timestamp
           : beganDate;
 
-      // If app was terminated for more than 4 hours, auto-finalize the old trip into history
+      // If app was terminated for more than 4 hours, auto-finalize the old trip into history if real movement was made
       if (now.difference(lastPointTime).inHours >= 4) {
         debugPrint('Auto-saving stale trip into history: $savedTripId');
-        final staleTrip = TripModel(
-          id: savedTripId,
-          title: 'Trip at ${DateFormat('hh:mm a').format(beganDate)}',
-          ownerId: authService.uid,
-          viewerIds: [],
-          startedAt: beganDate,
-          endedAt: lastPointTime,
-          distanceMeters: savedMeters,
-          isActive: false,
-          points: restoredTripPoints,
-        );
-        _historyTrips.insert(0, staleTrip);
-        await _saveLocalHistory();
+        if (restoredTripPoints.length >= 2 && savedMeters >= 15.0) {
+          final staleTrip = TripModel(
+            id: savedTripId,
+            title: 'Trip at ${DateFormat('hh:mm a').format(beganDate)}',
+            ownerId: authService.uid,
+            viewerIds: [],
+            startedAt: beganDate,
+            endedAt: lastPointTime,
+            distanceMeters: savedMeters,
+            isActive: false,
+            points: restoredTripPoints,
+          );
+          _historyTrips.insert(0, staleTrip);
+          _historyTrips.removeWhere((t) => t.id.startsWith('sample_'));
+          await _saveLocalHistory();
+        }
 
         await prefs.remove('is_tracking_active');
         await prefs.remove('active_trip_id');
@@ -610,7 +659,7 @@ class TrackingService extends ChangeNotifier {
         timestamp: now,
       ));
     } else if (finalPoints.isNotEmpty && _current != null) {
-      // Append destination point if different from the last point
+      // Append destination point only if phone moved distinctly from last point with good accuracy
       final lastPt = finalPoints.last;
       final endDist = Geolocator.distanceBetween(
         lastPt.latitude,
@@ -618,7 +667,7 @@ class TrackingService extends ChangeNotifier {
         _current!.latitude,
         _current!.longitude,
       );
-      if (endDist >= 2) {
+      if (endDist >= 8.0 && (_current!.accuracy <= 35.0)) {
         final destPt = TripPoint(
           latitude: _current!.latitude,
           longitude: _current!.longitude,
@@ -659,29 +708,23 @@ class TrackingService extends ChangeNotifier {
       } catch (_) {}
     }
 
-    // Save to local history permanently
-    final completedTrip = TripModel(
-      id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      title: '${_currentVehicle.displayName} Trip at ${DateFormat('hh:mm a').format(beganTime)}',
-      ownerId: authService.uid,
-      viewerIds: [],
-      startedAt: beganTime,
-      endedAt: now,
-      distanceMeters: totalDistance,
-      isActive: false,
-      points: finalPoints,
-      vehicleType: _currentVehicle.name,
-    );
-
-    _historyTrips.insert(0, completedTrip);
-    await _saveLocalHistory();
-
-    // Asynchronously pre-fetch and cache the actual road route for this completed trip
-    if (finalPoints.length >= 2) {
-      roadRoutingService.getRoadRoute(
-        tripId: completedTrip.id,
-        points: finalPoints.map((p) => ll.LatLng(p.latitude, p.longitude)).toList(),
+    // Save to local history permanently only if phone actually moved
+    if (finalPoints.length >= 2 && totalDistance >= 15.0) {
+      final completedTrip = TripModel(
+        id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
+        title: '${_currentVehicle.displayName} Trip at ${DateFormat('hh:mm a').format(beganTime)}',
+        ownerId: authService.uid,
+        viewerIds: [],
+        startedAt: beganTime,
+        endedAt: now,
+        distanceMeters: totalDistance,
+        isActive: false,
+        points: finalPoints,
+        vehicleType: _currentVehicle.name,
       );
+
+      _historyTrips.insert(0, completedTrip);
+      await _saveLocalHistory();
     }
 
     // Add Notification for stopped tracking
@@ -711,163 +754,18 @@ class TrackingService extends ChangeNotifier {
             existingIds.add(trip.id);
           }
         }
-        final now = DateTime.now();
-        // Remove any old sample trips that were placed on today's date
-        _historyTrips.removeWhere((t) =>
-            t.id.startsWith('sample_') &&
-            t.startedAt.year == now.year &&
-            t.startedAt.month == now.month &&
-            t.startedAt.day == now.day);
-
-        _historyTrips.sort((a, b) => b.startedAt.compareTo(a.startedAt));
-        notifyListeners();
       }
 
-      // If no trips exist locally, seed realistic sample trips for calendar & filter demo
-      if (_historyTrips.isEmpty) {
-        _historyTrips.addAll(_createSampleTrips());
-        await _saveLocalHistory();
-        notifyListeners();
-      }
+      // Permanently remove all mock/sample trips
+      _historyTrips.removeWhere((t) => t.id.startsWith('sample_'));
+      _historyTrips.sort((a, b) => b.startedAt.compareTo(a.startedAt));
+      await _saveLocalHistory();
+      notifyListeners();
 
       await syncFirestoreHistory();
     } catch (e) {
       debugPrint('Error loading history: $e');
     }
-  }
-
-  List<TripModel> _createSampleTrips() {
-    final now = DateTime.now();
-    return [
-      TripModel(
-        id: 'sample_1',
-        title: 'Car Drive to Market',
-        ownerId: authService.uid,
-        viewerIds: [],
-        startedAt: DateTime(now.year, now.month, now.day - 1, 10, 30),
-        endedAt: DateTime(now.year, now.month, now.day - 1, 11, 15),
-        distanceMeters: 6400,
-        isActive: false,
-        vehicleType: 'car',
-        points: [
-          TripPoint(latitude: 28.6250, longitude: 77.2050, speed: 18.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day, 10, 30)),
-          TripPoint(latitude: 28.6200, longitude: 77.2080, speed: 22.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day, 10, 42)),
-          TripPoint(latitude: 28.6139, longitude: 77.2090, speed: 25.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day, 10, 58)),
-          TripPoint(latitude: 28.6080, longitude: 77.2140, speed: 20.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day, 11, 15)),
-        ],
-      ),
-      TripModel(
-        id: 'sample_2',
-        title: 'Bike Ride across City',
-        ownerId: authService.uid,
-        viewerIds: [],
-        startedAt: DateTime(now.year, now.month, now.day - 1, 9, 15),
-        endedAt: DateTime(now.year, now.month, now.day - 1, 10, 5),
-        distanceMeters: 14800,
-        isActive: false,
-        vehicleType: 'bike',
-        points: [
-          TripPoint(latitude: 28.5800, longitude: 77.2200, speed: 35.0, accuracy: 5.0, timestamp: DateTime(now.year, now.month, now.day - 1, 9, 15)),
-          TripPoint(latitude: 28.5900, longitude: 77.2350, speed: 42.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 1, 9, 30)),
-          TripPoint(latitude: 28.6050, longitude: 77.2450, speed: 38.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 1, 9, 48)),
-          TripPoint(latitude: 28.6180, longitude: 77.2500, speed: 30.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 1, 10, 5)),
-        ],
-      ),
-      TripModel(
-        id: 'sample_3',
-        title: 'Scooty Commute to Office',
-        ownerId: authService.uid,
-        viewerIds: [],
-        startedAt: DateTime(now.year, now.month, now.day - 2, 17, 30),
-        endedAt: DateTime(now.year, now.month, now.day - 2, 18, 5),
-        distanceMeters: 8400,
-        isActive: false,
-        vehicleType: 'scooty',
-        points: [
-          TripPoint(latitude: 28.6100, longitude: 77.1900, speed: 25.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 2, 17, 30)),
-          TripPoint(latitude: 28.6150, longitude: 77.2000, speed: 28.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 2, 17, 45)),
-          TripPoint(latitude: 28.6220, longitude: 77.2100, speed: 22.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 2, 18, 5)),
-        ],
-      ),
-      TripModel(
-        id: 'sample_4',
-        title: 'Morning Walk at Park',
-        ownerId: authService.uid,
-        viewerIds: [],
-        startedAt: DateTime(now.year, now.month, now.day - 3, 6, 30),
-        endedAt: DateTime(now.year, now.month, now.day - 3, 7, 20),
-        distanceMeters: 3200,
-        isActive: false,
-        vehicleType: 'human',
-        points: [
-          TripPoint(latitude: 28.6320, longitude: 77.2180, speed: 4.5, accuracy: 3.0, timestamp: DateTime(now.year, now.month, now.day - 3, 6, 30)),
-          TripPoint(latitude: 28.6340, longitude: 77.2200, speed: 5.0, accuracy: 3.0, timestamp: DateTime(now.year, now.month, now.day - 3, 6, 55)),
-          TripPoint(latitude: 28.6310, longitude: 77.2220, speed: 4.2, accuracy: 3.0, timestamp: DateTime(now.year, now.month, now.day - 3, 7, 20)),
-        ],
-      ),
-      TripModel(
-        id: 'sample_5',
-        title: 'Highway Car Trip',
-        ownerId: authService.uid,
-        viewerIds: [],
-        startedAt: DateTime(now.year, now.month, now.day - 4, 14, 0),
-        endedAt: DateTime(now.year, now.month, now.day - 4, 14, 45),
-        distanceMeters: 21500,
-        isActive: false,
-        vehicleType: 'car',
-        points: [
-          TripPoint(latitude: 28.5500, longitude: 77.1800, speed: 55.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 4, 14, 0)),
-          TripPoint(latitude: 28.5800, longitude: 77.2000, speed: 65.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 4, 14, 20)),
-          TripPoint(latitude: 28.6100, longitude: 77.2250, speed: 50.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 4, 14, 45)),
-        ],
-      ),
-      TripModel(
-        id: 'sample_6',
-        title: 'Evening Bike Ride',
-        ownerId: authService.uid,
-        viewerIds: [],
-        startedAt: DateTime(now.year, now.month, now.day - 5, 18, 15),
-        endedAt: DateTime(now.year, now.month, now.day - 5, 18, 55),
-        distanceMeters: 11200,
-        isActive: false,
-        vehicleType: 'bike',
-        points: [
-          TripPoint(latitude: 28.6000, longitude: 77.2100, speed: 40.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 5, 18, 15)),
-          TripPoint(latitude: 28.6150, longitude: 77.2250, speed: 42.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 5, 18, 35)),
-          TripPoint(latitude: 28.6300, longitude: 77.2400, speed: 38.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 5, 18, 55)),
-        ],
-      ),
-      TripModel(
-        id: 'sample_7',
-        title: 'Scooty Shopping Run',
-        ownerId: authService.uid,
-        viewerIds: [],
-        startedAt: DateTime(now.year, now.month, now.day - 6, 11, 0),
-        endedAt: DateTime(now.year, now.month, now.day - 6, 11, 35),
-        distanceMeters: 6700,
-        isActive: false,
-        vehicleType: 'scooty',
-        points: [
-          TripPoint(latitude: 28.6200, longitude: 77.2000, speed: 28.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 6, 11, 0)),
-          TripPoint(latitude: 28.6300, longitude: 77.2150, speed: 25.0, accuracy: 4.0, timestamp: DateTime(now.year, now.month, now.day - 6, 11, 35)),
-        ],
-      ),
-      TripModel(
-        id: 'sample_8',
-        title: 'Evening Walk Jog',
-        ownerId: authService.uid,
-        viewerIds: [],
-        startedAt: DateTime(now.year, now.month, now.day - 7, 19, 0),
-        endedAt: DateTime(now.year, now.month, now.day - 7, 19, 40),
-        distanceMeters: 4500,
-        isActive: false,
-        vehicleType: 'human',
-        points: [
-          TripPoint(latitude: 28.6100, longitude: 77.2100, speed: 7.5, accuracy: 3.0, timestamp: DateTime(now.year, now.month, now.day - 7, 19, 0)),
-          TripPoint(latitude: 28.6180, longitude: 77.2150, speed: 8.0, accuracy: 3.0, timestamp: DateTime(now.year, now.month, now.day - 7, 19, 40)),
-        ],
-      ),
-    ];
   }
 
   Future<void> syncFirestoreHistory() async {

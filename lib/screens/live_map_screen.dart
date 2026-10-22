@@ -11,7 +11,6 @@ import '../models/stoppage_model.dart';
 import '../models/trip_model.dart';
 import '../models/vehicle_type.dart';
 import '../services/geocoding_service.dart';
-import '../services/road_routing_service.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
 import '../utils/trip_direction_helper.dart';
@@ -45,9 +44,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   DateTime _selectedDate = DateTime.now();
   String? _selectedSegmentId; // null = Show all paths together
   VehicleType? _selectedVehicleFilter;
-
-  final Map<String, List<ll.LatLng>> _snappedTripRoutes = {};
-  final Set<String> _pendingSnapTripIds = {};
 
   static const ll.LatLng _defaultCoord = ll.LatLng(20.5937, 78.9629); // India fallback
 
@@ -180,7 +176,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         );
         if (trips.isNotEmpty && !trackingService.active) {
           final allPoints = trips
-              .expand((t) => _snappedTripRoutes[t.id] ?? t.points.map((p) => ll.LatLng(p.latitude, p.longitude)))
+              .expand((t) => t.points.map((p) => ll.LatLng(p.latitude, p.longitude)))
               .toList();
           if (allPoints.isNotEmpty) {
             _fitRouteBounds(allPoints, animate: true);
@@ -199,28 +195,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   }
 
   void _snapTripsForCurrentDate() {
-    final trips = trackingService.getTripsForDate(
-      _selectedDate,
-      vehicleFilter: _selectedVehicleFilter,
-    );
-    for (final trip in trips) {
-      if (trip.points.length >= 2 &&
-          !_snappedTripRoutes.containsKey(trip.id) &&
-          !_pendingSnapTripIds.contains(trip.id)) {
-        _pendingSnapTripIds.add(trip.id);
-        final rawPts = trip.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
-        roadRoutingService.getRoadRoute(tripId: trip.id, points: rawPts).then((snapped) {
-          _pendingSnapTripIds.remove(trip.id);
-          if (mounted && snapped.isNotEmpty && snapped != rawPts) {
-            setState(() {
-              _snappedTripRoutes[trip.id] = snapped;
-            });
-          }
-        }).catchError((_) {
-          _pendingSnapTripIds.remove(trip.id);
-        });
-      }
-    }
+    // Only real GPS breadcrumbs where the phone traveled are displayed
   }
 
   void _onTrackingUpdate() {
@@ -332,13 +307,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
 
     final pts = <ll.LatLng>[];
     for (final t in dayTrips) {
-      final roadPts = _snappedTripRoutes[t.id];
-      if (roadPts != null && roadPts.isNotEmpty) {
-        pts.addAll(roadPts);
-      } else {
-        for (final p in t.points) {
-          pts.add(ll.LatLng(p.latitude, p.longitude));
-        }
+      for (final p in t.points) {
+        pts.add(ll.LatLng(p.latitude, p.longitude));
       }
     }
 
@@ -450,7 +420,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             vehicleFilter: _selectedVehicleFilter,
           );
           final pts = trips
-              .expand((t) => _snappedTripRoutes[t.id] ?? t.points.map((p) => ll.LatLng(p.latitude, p.longitude)))
+              .expand((t) => t.points.map((p) => ll.LatLng(p.latitude, p.longitude)))
               .toList();
 
           if (pts.isNotEmpty) {
@@ -562,7 +532,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         // Build distinct segments (Jaane Ka vs Aane Ka / Multiple trips)
         final segments = TripDirectionHelper.buildSegmentsForTrips(
           dayTrips,
-          snappedRoutes: _snappedTripRoutes,
         );
 
         // Polylines & Markers for FlutterMap

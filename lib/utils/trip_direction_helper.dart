@@ -118,9 +118,7 @@ class TripDirectionHelper {
     if (sortedTrips.length == 1) {
       final trip = sortedTrips.first;
       final rawCoords = trip.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
-      final routeCoords = (snappedRoutes != null && snappedRoutes.containsKey(trip.id))
-          ? snappedRoutes[trip.id]!
-          : rawCoords;
+      final routeCoords = rawCoords;
 
       final split = _detectAndSplitRoundTrip(trip, routeCoords);
       if (split != null) {
@@ -151,9 +149,7 @@ class TripDirectionHelper {
       final trip = sortedTrips[i];
       final isReturn = (i > 0 && i == sortedTrips.length - 1);
       final rawCoords = trip.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
-      final routeCoords = (snappedRoutes != null && snappedRoutes.containsKey(trip.id))
-          ? snappedRoutes[trip.id]!
-          : rawCoords;
+      final routeCoords = rawCoords;
 
       final color = getColorForTrip(i, sortedTrips.length, isReturn: isReturn);
       final label = getDirectionTitle(i, sortedTrips.length, isReturn: isReturn);
