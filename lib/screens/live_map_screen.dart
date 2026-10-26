@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -44,6 +45,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   DateTime _selectedDate = DateTime.now();
   String? _selectedSegmentId; // null = Show all paths together
   VehicleType? _selectedVehicleFilter;
+  StreamSubscription<Position>? _passivePositionSub;
 
   static const ll.LatLng _defaultCoord = ll.LatLng(20.5937, 78.9629); // India fallback
 
@@ -143,12 +145,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     trackingService.addListener(_onTrackingUpdate);
     _checkLocationServiceStatus();
 
-    // Preload history and snap today's trips immediately
-    trackingService.loadHistory().then((_) {
-      if (mounted) {
-        _snapTripsForCurrentDate();
-      }
-    });
+    // Preload history
+    trackingService.loadHistory();
   }
 
   @override
@@ -163,39 +161,37 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     await trackingService.loadHistory();
     _selectedDate = DateTime.now();
     _selectedSegmentId = null;
-    _snapTripsForCurrentDate();
 
-    final pos = trackingService.current ?? await trackingService.initCurrentLocation();
+    final pos = await trackingService.initCurrentLocation(forceRefresh: true) ?? trackingService.current;
 
     if (_isMapReady && mounted) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        final trips = trackingService.getTripsForDate(
-          _selectedDate,
-          vehicleFilter: _selectedVehicleFilter,
-        );
-        if (trips.isNotEmpty && !trackingService.active) {
-          final allPoints = trips
-              .expand((t) => t.points.map((p) => ll.LatLng(p.latitude, p.longitude)))
-              .toList();
-          if (allPoints.isNotEmpty) {
-            _fitRouteBounds(allPoints, animate: true);
-            return;
-          }
-        }
         if (pos != null) {
-          _animatedMapMove(ll.LatLng(pos.latitude, pos.longitude), 16.5, durationMs: 400);
+          final coord = ll.LatLng(pos.latitude, pos.longitude);
+          _targetMarkerCoord = coord;
+          _animatedMarkerCoord = coord;
+          _animatedMapMove(coord, 16.5, durationMs: 400);
         } else {
+          final trips = trackingService.getTripsForDate(
+            _selectedDate,
+            vehicleFilter: _selectedVehicleFilter,
+          );
+          if (trips.isNotEmpty && !trackingService.active) {
+            final allPoints = trips
+                .expand((t) => t.points.map((p) => ll.LatLng(p.latitude, p.longitude)))
+                .toList();
+            if (allPoints.isNotEmpty) {
+              _fitRouteBounds(allPoints, animate: true);
+              return;
+            }
+          }
           try {
             _mapController.move(_mapController.camera.center, _mapController.camera.zoom);
           } catch (_) {}
         }
       });
     }
-  }
-
-  void _snapTripsForCurrentDate() {
-    // Only real GPS breadcrumbs where the phone traveled are displayed
   }
 
   void _onTrackingUpdate() {
@@ -215,11 +211,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         _markerMoveController?.forward(from: 0.0);
       }
     }
+
+    if (trackingService.active) {
+      _passivePositionSub?.cancel();
+    } else if (_isLocationEnabled && _passivePositionSub == null) {
+      _startPassiveLocationStream();
+    }
   }
 
   @override
   void dispose() {
     trackingService.removeListener(_onTrackingUpdate);
+    _passivePositionSub?.cancel();
     _markerMoveController?.dispose();
     _mapAnimationController?.dispose();
     _serviceStatusSub?.cancel();
@@ -228,7 +231,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
 
   void _checkLocationServiceStatus() {
     Geolocator.isLocationServiceEnabled().then((enabled) {
-      if (mounted) setState(() => _isLocationEnabled = enabled);
+      if (mounted) {
+        setState(() => _isLocationEnabled = enabled);
+        if (enabled) {
+          _initDeviceLocation();
+          _startPassiveLocationStream();
+        }
+      }
     });
     _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
       if (mounted) {
@@ -236,16 +245,55 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         setState(() => _isLocationEnabled = isEnabled);
         if (isEnabled) {
           _initDeviceLocation();
+          _startPassiveLocationStream();
+        } else {
+          _passivePositionSub?.cancel();
         }
       }
     });
   }
 
   Future<void> _initDeviceLocation() async {
-    final pos = trackingService.current ?? await trackingService.initCurrentLocation();
+    final pos = await trackingService.initCurrentLocation(forceRefresh: true) ?? trackingService.current;
     if (pos != null && mounted) {
+      final coord = ll.LatLng(pos.latitude, pos.longitude);
+      _targetMarkerCoord = coord;
+      _animatedMarkerCoord = coord;
       geocodingService.updateFromPosition(pos.latitude, pos.longitude);
+      if (_isAutoFollowEnabled) {
+        _animatedMapMove(coord, 16.5, durationMs: 500);
+      }
     }
+  }
+
+  void _startPassiveLocationStream() {
+    _passivePositionSub?.cancel();
+    if (trackingService.active) return;
+    try {
+      _passivePositionSub = Geolocator.getPositionStream(
+        locationSettings: defaultTargetPlatform == TargetPlatform.android
+            ? AndroidSettings(
+                accuracy: LocationAccuracy.high,
+                distanceFilter: 12, // 12 meters prevents indoor stationary jitter
+                intervalDuration: const Duration(seconds: 4),
+              )
+            : const LocationSettings(
+                accuracy: LocationAccuracy.high,
+                distanceFilter: 12,
+              ),
+      ).listen((p) {
+        if (!mounted || trackingService.active) return;
+        // Ignore poor accuracy indoor bounce while stationary
+        if (p.accuracy > 40.0 && p.speed < 0.8) return;
+
+        trackingService.setCurrentPosition(p);
+        final coord = ll.LatLng(p.latitude, p.longitude);
+        _targetMarkerCoord = coord;
+        if (_animatedMarkerCoord == null) {
+          _animatedMarkerCoord = coord;
+        }
+      }, onError: (_) {});
+    } catch (_) {}
   }
 
   void _zoomIn() {
@@ -281,10 +329,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
       }
       return;
     }
-    final pos = trackingService.current ?? await trackingService.initCurrentLocation();
+    final pos = await trackingService.initCurrentLocation(forceRefresh: true) ?? trackingService.current;
     if (pos != null && mounted) {
+      final coord = ll.LatLng(pos.latitude, pos.longitude);
+      _targetMarkerCoord = coord;
+      _animatedMarkerCoord = coord;
       geocodingService.updateFromPosition(pos.latitude, pos.longitude);
-      _animatedMapMove(ll.LatLng(pos.latitude, pos.longitude), 16.5, durationMs: 500);
+      _animatedMapMove(coord, 16.5, durationMs: 500);
     }
   }
 
@@ -297,8 +348,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
       _selectedDate = date;
       _selectedSegmentId = null; // Reset to show all paths of the day
     });
-
-    _snapTripsForCurrentDate();
 
     final dayTrips = trackingService.getTripsForDate(
       date,
@@ -336,7 +385,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
       _selectedVehicleFilter = type;
       _selectedSegmentId = null;
     });
-    _snapTripsForCurrentDate();
 
     final dayTrips = trackingService.getTripsForDate(
       _selectedDate,
@@ -412,8 +460,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             _selectedDate = DateTime.now();
             _selectedSegmentId = null;
           });
-
-          _snapTripsForCurrentDate();
 
           final trips = trackingService.getTripsForDate(
             _selectedDate,
@@ -580,8 +626,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             markers.add(
               Marker(
                 point: pts.first,
-                width: 68,
-                height: 56,
+                width: 78,
+                height: 62,
                 alignment: Alignment.topCenter,
                 child: StartOriginMarkerWidget(
                   startedAt: seg.startedAt,
@@ -634,13 +680,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             markers.add(
               Marker(
                 point: endStop.latLng,
-                width: 72,
-                height: 60,
+                width: 78,
+                height: 62,
                 alignment: Alignment.topCenter,
                 child: StoppageMarkerWidget(
                   stoppage: endStop,
                   customColor: seg.primaryColor,
-                  customLabel: seg.isReturn ? 'FINISH / RETURN' : 'DESTINATION',
+                  customLabel: seg.isReturn ? 'RETURN DESTINATION' : 'DESTINATION',
                   customIcon: seg.isReturn ? Icons.home_rounded : Icons.flag_rounded,
                   onTap: () => showStoppageDetailsSheet(context, endStop),
                 ),
@@ -670,24 +716,25 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
           }
         }
 
-        // 2. Render Active Live Tracking Route (if currently tracking)
-        if (isActive && hasLiveRoute) {
+        // 2. Render Active Live Tracking Route (if currently tracking on today's view)
+        if (isActive && hasLiveRoute && isToday) {
+          final liveColor = dayTrips.isNotEmpty ? TripDirectionHelper.colorReturn : TripDirectionHelper.colorOutward;
           polylines.add(
             Polyline(
               points: liveRoutePoints,
               strokeWidth: 7.2,
-              color: const Color(0xFF10B981).withValues(alpha: 0.25),
+              color: liveColor.withValues(alpha: 0.25),
             ),
           );
           polylines.add(
             Polyline(
               points: liveRoutePoints,
               strokeWidth: 5.2,
-              color: const Color(0xFF10B981),
+              color: liveColor,
             ),
           );
           arrowMarkers.addAll(
-            buildDirectionalArrowMarkers(liveRoutePoints, routeColor: const Color(0xFF10B981)),
+            buildDirectionalArrowMarkers(liveRoutePoints, routeColor: liveColor),
           );
 
           // Live Start Marker
@@ -698,13 +745,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
           markers.add(
             Marker(
               point: liveRoutePoints.first,
-              width: 60,
-              height: 54,
+              width: 78,
+              height: 62,
               alignment: Alignment.topCenter,
               child: StartOriginMarkerWidget(
                 startedAt: tripStartTime,
-                color: const Color(0xFF10B981),
-                label: 'LIVE START',
+                color: liveColor,
+                label: dayTrips.isNotEmpty ? 'RETURN (LIVE)' : 'LIVE START',
                 onTap: () {},
               ),
             ),

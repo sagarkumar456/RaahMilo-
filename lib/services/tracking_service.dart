@@ -144,7 +144,7 @@ class TrackingService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Position?> initCurrentLocation() async {
+  Future<Position?> initCurrentLocation({bool forceRefresh = false}) async {
     try {
       var perm = await Geolocator.checkPermission();
       if (perm == LocationPermission.denied) {
@@ -154,12 +154,19 @@ class TrackingService extends ChangeNotifier {
         return null;
       }
 
-      // Step 1: Immediate warm start with last known location
-      final last = await Geolocator.getLastKnownPosition();
-      if (last != null && _current == null) {
-        _current = last;
-        geocodingService.updateFromPosition(last.latitude, last.longitude);
-        notifyListeners();
+      final isEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!isEnabled) {
+        return null;
+      }
+
+      // Step 1: Immediate warm start with last known location if we have none yet
+      if (_current == null && !forceRefresh) {
+        final last = await Geolocator.getLastKnownPosition();
+        if (last != null && _current == null) {
+          _current = last;
+          geocodingService.updateFromPosition(last.latitude, last.longitude);
+          notifyListeners();
+        }
       }
 
       // Step 2: Fresh position using Google Play Services Fused Location
@@ -309,23 +316,21 @@ class TrackingService extends ChangeNotifier {
   Future<void> _onPosition(Position p) async {
     if (!_active || _tripId == null) return;
 
-    // Discard fixes with unacceptable accuracy right away.
-    // Clean satellite GPS outdoors is 3-15m; tolerable city/neighborhood is <= 35m.
-    // Anything > 35m is degraded indoor noise, wifi or cell tower triangulation.
-    final bool isFirstPoint = _tripPoints.isEmpty;
-    if (isFirstPoint) {
-      if (p.accuracy > 45.0) return;
-    } else {
-      if (p.accuracy > 35.0) {
-        // Update live status for map marker & anti-theft without polluting the movement path
-        _current = p;
-        geocodingService.updateFromPosition(p.latitude, p.longitude);
-        antiTheftService.checkPositionForTheft(p);
-        notifyListeners();
-        return;
-      }
+    // 1. Accuracy Filter:
+    // When indoor or stationary, accuracy > 40m is multipath bounce/jitter (ignore from movement path)
+    if (p.accuracy > 40.0 && p.speed < 1.0) {
+      _current = p;
+      notifyListeners();
+      return;
+    }
+    // High-speed outdoor fixes with accuracy > 65m are also rejected from path
+    if (p.accuracy > 65.0) {
+      _current = p;
+      notifyListeners();
+      return;
     }
 
+    final bool isFirstPoint = _tripPoints.isEmpty;
     if (!isFirstPoint) {
       final lastPoint = _tripPoints.last;
       final step = Geolocator.distanceBetween(
@@ -337,38 +342,34 @@ class TrackingService extends ChangeNotifier {
 
       final timeDiffSec = p.timestamp.difference(lastPoint.timestamp).inSeconds.abs();
 
-      // 1. Minimum physical displacement threshold:
-      // When a phone is stationary, GPS naturally wanders within 2-6m.
-      // Ignore sub-7m micro-fluctuations to prevent stationary spider-webs.
-      if (step < 7.0) {
+      // 2. Stationary Drift Filter:
+      // When a phone is sitting on a table, in pocket, or stationary indoors,
+      // satellite signals wander within 1-12m even though speed is 0.
+      // If speed is practically stationary (< 0.6 m/s = ~2.1 km/h) and step < 12m,
+      // REJECT IT to prevent fake movement / spiderwebs!
+      if (p.speed < 0.6 && step < 12.0) {
         _current = p;
-        geocodingService.updateFromPosition(p.latitude, p.longitude);
         antiTheftService.checkPositionForTheft(p);
         notifyListeners();
         return;
       }
 
-      // 2. Stationary / Low Speed GPS Drift Filter:
-      final calcSpeed = timeDiffSec > 0 ? (step / timeDiffSec) : p.speed;
-      final effectiveSpeed = (p.speed > 0) ? p.speed : calcSpeed;
-
-      // If speed is below 0.6 m/s (~2.1 km/h) and step is within accuracy circle (< 16m),
-      // it is stationary noise/jitter while sitting or standing still.
-      if (effectiveSpeed < 0.6 && step < 16.0) {
+      // If phone moved less than 4.0m, ignore micro-fluctuations
+      if (step < 4.0) {
         _current = p;
-        geocodingService.updateFromPosition(p.latitude, p.longitude);
         antiTheftService.checkPositionForTheft(p);
         notifyListeners();
         return;
       }
 
       // 3. Teleportation / Outlier Jump Filter:
-      // Reject impossible GPS leaps (e.g. sudden cell-tower flips)
-      if (timeDiffSec > 0 && calcSpeed > 45.0) return; // > 162 km/h
-      if (step > 120.0 && timeDiffSec <= 3) return;
-      if (step > 500.0 && timeDiffSec < 15) return;
+      // Reject impossible physical speeds (> 60 m/s = 216 km/h) over a significant jump
+      final calcSpeed = timeDiffSec > 0 ? (step / timeDiffSec) : p.speed;
+      if (timeDiffSec >= 1 && calcSpeed > 60.0 && step > 120.0) {
+        return;
+      }
 
-      // Valid true movement! Accumulate real distance
+      // True genuine movement! Accumulate real distance
       _meters += step;
     }
 
@@ -456,9 +457,9 @@ class TrackingService extends ChangeNotifier {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 6, // Prevents OS from firing continuous sub-6m stationary noise
-        forceLocationManager: false, // Uses Google Play Services FusedLocationProviderClient for continuous background tracking
-        intervalDuration: const Duration(seconds: 3),
+        distanceFilter: 3, // Sensitive 3m filter so turns and corners are accurately logged
+        forceLocationManager: false, // Google Play Services Fused Location
+        intervalDuration: const Duration(seconds: 2), // 2-second high-precision stream
         foregroundNotificationConfig: const ForegroundNotificationConfig(
           notificationTitle: "RaahMilo is Active",
           notificationText: "Live GPS tracking in progress...",
@@ -472,14 +473,14 @@ class TrackingService extends ChangeNotifier {
       return AppleSettings(
         accuracy: LocationAccuracy.high,
         activityType: ActivityType.fitness,
-        distanceFilter: 6,
+        distanceFilter: 3,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
       );
     } else {
       return const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 6,
+        distanceFilter: 3,
       );
     }
   }
@@ -659,7 +660,7 @@ class TrackingService extends ChangeNotifier {
         timestamp: now,
       ));
     } else if (finalPoints.isNotEmpty && _current != null) {
-      // Append destination point only if phone moved distinctly from last point with good accuracy
+      // Append destination point only if phone moved distinctly from last point with reasonable accuracy
       final lastPt = finalPoints.last;
       final endDist = Geolocator.distanceBetween(
         lastPt.latitude,
@@ -667,7 +668,7 @@ class TrackingService extends ChangeNotifier {
         _current!.latitude,
         _current!.longitude,
       );
-      if (endDist >= 8.0 && (_current!.accuracy <= 35.0)) {
+      if (endDist >= 4.0 && (_current!.accuracy <= 80.0)) {
         final destPt = TripPoint(
           latitude: _current!.latitude,
           longitude: _current!.longitude,

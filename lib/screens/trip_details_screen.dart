@@ -31,7 +31,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   Timer? _playbackTimer;
 
   late List<TripPoint> _points;
-  List<ll.LatLng> _roadPoints = [];
 
   List<StoppageModel> get _stoppages => extractStoppages(_points);
 
@@ -55,16 +54,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   void initState() {
     super.initState();
     _points = List<TripPoint>.from(widget.trip.points);
-    _roadPoints = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
     _loadTripPointsFromFirestore();
   }
 
   void _fitTripBounds() {
     if (!_isMapReady) return;
     try {
-      final activeList = _roadPoints.isNotEmpty
-          ? _roadPoints
-          : _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
+      final activeList = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
 
       if (activeList.length >= 2) {
         final bounds = LatLngBounds.fromPoints(activeList);
@@ -95,7 +91,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         final pts = snap.docs.map((d) => TripPoint.fromMap(d.data())).toList();
         setState(() {
           _points = pts;
-          _roadPoints = pts.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
         });
         if (pts.isNotEmpty) {
           _fitTripBounds();
@@ -128,7 +123,6 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
           _sliderValue = 0.0;
         } else {
           _sliderValue += 0.015;
-          if (_sliderValue > 1.0) _sliderValue = 1.0;
         }
       });
       _updatePlaybackMarker();
@@ -149,9 +143,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   }
 
   void _updatePlaybackMarker() {
-    final activeList = _roadPoints.isNotEmpty
-        ? _roadPoints
-        : _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
+    final activeList = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
     if (activeList.isEmpty) return;
     final index = ((activeList.length - 1) * _sliderValue).round().clamp(0, activeList.length - 1);
     final pt = activeList[index];

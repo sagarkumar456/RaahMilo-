@@ -28,7 +28,7 @@ class RoadRoutingService {
 
     final cacheKey = tripId.isNotEmpty
         ? tripId
-        : '${points.first.latitude.toStringAsFixed(4)},${points.first.longitude.toStringAsFixed(4)}->${points.last.latitude.toStringAsFixed(4)},${points.last.longitude.toStringAsFixed(4)}';
+        : '${points.first.latitude.toStringAsFixed(4)},${points.first.longitude.toStringAsFixed(4)}_${points.length}_${points.last.latitude.toStringAsFixed(4)},${points.last.longitude.toStringAsFixed(4)}';
 
     // 1. Check in-memory cache
     if (_memoryCache.containsKey(cacheKey) && _memoryCache[cacheKey]!.isNotEmpty) {
@@ -67,7 +67,7 @@ class RoadRoutingService {
 
     if (validPoints.length < 2) return points;
 
-    final sampled = _sampleWaypoints(validPoints, maxPoints: 20);
+    final sampled = _sampleWaypoints(validPoints, maxPoints: 35);
 
     try {
       // Coordinates format for OSRM: {lon},{lat};{lon},{lat}...
@@ -86,7 +86,7 @@ class RoadRoutingService {
           'User-Agent': 'RaahMilo-App/1.0 (Mobile; Flutter; SecureRoutingClient)',
           'X-Content-Type-Options': 'nosniff',
         },
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         if (data['code'] == 'Ok' &&
@@ -147,7 +147,7 @@ class RoadRoutingService {
 
   /// Reduce list of points to at most [maxPoints] while keeping start, end,
   /// and significant turning points.
-  List<ll.LatLng> _sampleWaypoints(List<ll.LatLng> pts, {int maxPoints = 20}) {
+  List<ll.LatLng> _sampleWaypoints(List<ll.LatLng> pts, {int maxPoints = 35}) {
     if (pts.length <= maxPoints) return pts;
 
     final List<ll.LatLng> result = [];

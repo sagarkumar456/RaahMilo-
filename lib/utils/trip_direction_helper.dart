@@ -4,11 +4,11 @@ import 'package:latlong2/latlong.dart' as ll;
 import '../models/trip_model.dart';
 import 'path_arrows.dart';
 
-/// Represents a distinct trip route segment (e.g., Jaane Ka / Outward vs Aane Ka / Return)
+/// Represents a distinct trip route segment (e.g., Outward vs Return)
 class TripRouteSegment {
   final String id;
   final String title;
-  final String directionLabel; // 'Jaane Ka (Outward)', 'Aane Ka (Return)', etc.
+  final String directionLabel; // 'Outward', 'Return', etc.
   final Color primaryColor;
   final Color casingColor;
   final List<ll.LatLng> points;
@@ -41,7 +41,7 @@ class TripRouteSegment {
 }
 
 class TripDirectionHelper {
-  // Unified single green route color requested by user
+  // Unified Emerald Green route color requested by user
   static const Color colorPathGreen = Color(0xFF10B981); // Emerald Green
   static const Color colorOutward = colorPathGreen;
   static const Color colorReturn = colorPathGreen;
@@ -51,9 +51,9 @@ class TripDirectionHelper {
     return colorPathGreen;
   }
 
-  /// Builds a friendly title indicating direction
+  /// Builds a standard title indicating direction
   static String getDirectionTitle(int index, int totalTrips, {bool isReturn = false}) {
-    if (isReturn) return 'Return Trip';
+    if (isReturn) return 'Trip 2 • Return';
     if (totalTrips == 1) return 'Trip 1 • Route';
     if (totalTrips == 2) {
       return index == 0 ? 'Trip 1 • Outward' : 'Trip 2 • Return';
@@ -118,7 +118,9 @@ class TripDirectionHelper {
     if (sortedTrips.length == 1) {
       final trip = sortedTrips.first;
       final rawCoords = trip.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
-      final routeCoords = rawCoords;
+      final routeCoords = (snappedRoutes != null && snappedRoutes.containsKey(trip.id))
+          ? snappedRoutes[trip.id]!
+          : rawCoords;
 
       final split = _detectAndSplitRoundTrip(trip, routeCoords);
       if (split != null) {
@@ -149,16 +151,18 @@ class TripDirectionHelper {
       final trip = sortedTrips[i];
       final isReturn = (i > 0 && i == sortedTrips.length - 1);
       final rawCoords = trip.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
-      final routeCoords = rawCoords;
+      final routeCoords = (snappedRoutes != null && snappedRoutes.containsKey(trip.id))
+          ? snappedRoutes[trip.id]!
+          : rawCoords;
 
       final color = getColorForTrip(i, sortedTrips.length, isReturn: isReturn);
       final label = getDirectionTitle(i, sortedTrips.length, isReturn: isReturn);
 
       // Apply lateral offset when there are 2 overlapping trips
-      // Trip 1 shifted slightly left (+2.5m), Trip 2 shifted slightly right (-2.5m)
+      // Trip 1 shifted slightly left (+3.5m), Trip 2 shifted slightly right (-3.5m)
       List<ll.LatLng> displayCoords = routeCoords;
       if (sortedTrips.length == 2) {
-        final offset = i == 0 ? 2.5 : -2.5;
+        final offset = i == 0 ? 3.5 : -3.5;
         displayCoords = offsetPolyline(routeCoords, offset);
       }
 
@@ -187,7 +191,7 @@ class TripDirectionHelper {
     TripModel trip,
     List<ll.LatLng> coords,
   ) {
-    if (coords.length < 8) return null;
+    if (coords.length < 6) return null;
 
     final start = coords.first;
     final end = coords.last;
@@ -206,22 +210,20 @@ class TripDirectionHelper {
 
     final endDistFromStart = approximateDistanceMeters(start, end);
 
-    // If max distance is > 500m, the turnaround is between 25% and 80% through the trip,
-    // and the trip returned back to within 45% of start distance, it's a round trip!
-    final minIndex = (coords.length * 0.25).floor();
-    final maxIndex = (coords.length * 0.80).floor();
+    // If max distance is >= 80m, the turnaround is at least 2 points from the ends,
+    // and the trip returned back closer to start (within 55% of max distance, or within 120m)
+    final isRoundTrip = maxDistFromStart >= 80 &&
+        maxIdx >= 2 &&
+        maxIdx <= coords.length - 3 &&
+        (endDistFromStart < (maxDistFromStart * 0.55) || endDistFromStart <= 120);
 
-    if (maxDistFromStart > 500 &&
-        maxIdx >= minIndex &&
-        maxIdx <= maxIndex &&
-        endDistFromStart < (maxDistFromStart * 0.45)) {
-      
+    if (isRoundTrip) {
       final outwardPts = coords.sublist(0, maxIdx + 1);
       final returnPts = coords.sublist(maxIdx);
 
-      // Shift slightly to create dual lanes
-      final shiftedOutward = offsetPolyline(outwardPts, 2.5);
-      final shiftedReturn = offsetPolyline(returnPts, -2.5);
+      // Shift slightly to create dual lanes (3.5m lateral offset)
+      final shiftedOutward = offsetPolyline(outwardPts, 3.5);
+      final shiftedReturn = offsetPolyline(returnPts, -3.5);
 
       final turnaroundPt = coords[maxIdx];
 

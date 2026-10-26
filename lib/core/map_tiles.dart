@@ -5,7 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 class AppMapTiles {
   /// OpenStreetMap: Free open-source map with zero API key and zero watermarks
   static const String streetUrl =
-      'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   /// Esri World Street Map: Clean fallback layer, zero API key required
   static const String streetFallbackUrl =
@@ -24,7 +24,6 @@ class AppMapTiles {
       return TileLayer(
         urlTemplate: satelliteUrl,
         fallbackUrl: streetFallbackUrl,
-        subdomains: const ['a', 'b', 'c'],
         userAgentPackageName: userAgentPackage,
         maxZoom: 19.0,
         maxNativeZoom: 19,
@@ -39,7 +38,6 @@ class AppMapTiles {
     return TileLayer(
       urlTemplate: streetUrl,
       fallbackUrl: streetFallbackUrl,
-      subdomains: const ['a', 'b', 'c'],
       userAgentPackageName: userAgentPackage,
       maxZoom: 19.0,
       maxNativeZoom: 19,

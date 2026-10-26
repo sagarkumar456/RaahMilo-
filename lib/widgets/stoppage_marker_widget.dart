@@ -31,56 +31,60 @@ class StoppageMarkerWidget extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Stoppage Duration Pill
-          if (stoppage.formattedDuration.isNotEmpty)
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.topCenter,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Stoppage Duration Pill
+            if (stoppage.formattedDuration.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                margin: const EdgeInsets.only(bottom: 2),
+                decoration: BoxDecoration(
+                  color: stopColor,
+                  borderRadius: BorderRadius.circular(6),
+                  boxShadow: const [
+                    BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
+                  ],
+                ),
+                child: Text(
+                  stoppage.formattedDuration,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+
+            // Circular Stop Pin with Stoppage Number
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-              margin: const EdgeInsets.only(bottom: 2),
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: stopColor,
-                borderRadius: BorderRadius.circular(6),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
                 boxShadow: const [
-                  BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
+                  BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 2)),
                 ],
               ),
-              child: Text(
-                stoppage.formattedDuration,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.2,
+              child: Center(
+                child: Text(
+                  '${stoppage.stopNumber}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ),
-
-          // Circular Stop Pin with Stoppage Number
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: stopColor,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: const [
-                BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 2)),
-              ],
-            ),
-            child: Center(
-              child: Text(
-                '${stoppage.stopNumber}',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -91,50 +95,54 @@ class StoppageMarkerWidget extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            margin: const EdgeInsets.only(bottom: 2),
-            decoration: BoxDecoration(
-              color: endColor,
-              borderRadius: BorderRadius.circular(6),
-              boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
-              ],
-            ),
-            child: Text(
-              labelText,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 8.5,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.4,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.topCenter,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Badge
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              margin: const EdgeInsets.only(bottom: 2),
+              decoration: BoxDecoration(
+                color: endColor,
+                borderRadius: BorderRadius.circular(6),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
+                ],
+              ),
+              child: Text(
+                labelText,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.4,
+                ),
               ),
             ),
-          ),
 
-          // Final Destination Pin
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: endColor,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: const [
-                BoxShadow(color: Colors.black38, blurRadius: 5, offset: Offset(0, 2)),
-              ],
+            // Final Destination Pin
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: endColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black38, blurRadius: 5, offset: Offset(0, 2)),
+                ],
+              ),
+              child: Icon(
+                customIcon ?? Icons.flag_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
             ),
-            child: Icon(
-              customIcon ?? Icons.flag_rounded,
-              color: Colors.white,
-              size: 18,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -165,47 +173,51 @@ class StartOriginMarkerWidget extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-            margin: const EdgeInsets.only(bottom: 2),
-            decoration: BoxDecoration(
-              color: startColor,
-              borderRadius: BorderRadius.circular(6),
-              boxShadow: const [
-                BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
-              ],
-            ),
-            child: Text(
-              badgeLabel,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 8.5,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.4,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.topCenter,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+              margin: const EdgeInsets.only(bottom: 2),
+              decoration: BoxDecoration(
+                color: startColor,
+                borderRadius: BorderRadius.circular(6),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(0, 1)),
+                ],
+              ),
+              child: Text(
+                badgeLabel,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 8.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.4,
+                ),
               ),
             ),
-          ),
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: startColor,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 2),
-              boxShadow: const [
-                BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 2)),
-              ],
+            Container(
+              width: 30,
+              height: 30,
+              decoration: BoxDecoration(
+                color: startColor,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(0, 2)),
+                ],
+              ),
+              child: Icon(
+                icon ?? Icons.trip_origin_rounded,
+                color: Colors.white,
+                size: 16,
+              ),
             ),
-            child: Icon(
-              icon ?? Icons.trip_origin_rounded,
-              color: Colors.white,
-              size: 16,
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
