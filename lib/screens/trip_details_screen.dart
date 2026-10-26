@@ -181,9 +181,20 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
             ? ll.LatLng(trackingService.current!.latitude, trackingService.current!.longitude)
             : const ll.LatLng(20.5937, 78.9629));
 
-    final heading = (playbackIndex > 0 && displayRoute.length > 1)
-        ? calculateBearing(displayRoute[playbackIndex - 1], displayRoute[playbackIndex])
-        : 0.0;
+    double heading = 0.0;
+    if (displayRoute.length >= 2) {
+      if (playbackIndex > 0) {
+        final p1 = displayRoute[playbackIndex - 1];
+        final p2 = displayRoute[playbackIndex];
+        if (approximateDistanceMeters(p1, p2) > 0.5) {
+          heading = calculateBearing(p1, p2);
+        } else if (playbackIndex > 1) {
+          heading = calculateBearing(displayRoute[playbackIndex - 2], p2);
+        }
+      } else {
+        heading = calculateBearing(displayRoute[0], displayRoute[1]);
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -374,15 +385,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                   // Current Playback Vehicle
                   Marker(
                     point: currentPlaybackLL,
-                    width: 58,
-                    height: 58,
+                    width: 72,
+                    height: 72,
                     alignment: Alignment.center,
                     child: VehicleMarkerWidget(
                       vehicleType: widget.trip.vehicleTypeEnum,
                       isLive: _isPlaying,
                       isMoving: _isPlaying,
                       heading: heading,
-                      size: 42.0,
+                      size: 48.0,
                     ),
                   ),
                 ],

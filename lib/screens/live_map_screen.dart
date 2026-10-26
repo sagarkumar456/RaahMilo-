@@ -53,6 +53,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   ll.LatLng? _animatedMarkerCoord;
   ll.LatLng? _targetMarkerCoord;
   ll.LatLng? _prevMarkerCoord;
+  double _lastValidHeading = 0.0;
   AnimationController? _markerMoveController;
   Animation<double>? _markerMoveAnimation;
 
@@ -557,23 +558,35 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         final speedKmh = rawSpeed.toStringAsFixed(0);
         final isMoving = isActive && rawSpeed >= 1.5;
 
-        double heading = 0.0;
-        if (pos != null && pos.heading > 0 && pos.heading <= 360) {
+        // Fetch day's trips
+        final dayTrips = trackingService.getTripsForDate(
+          _selectedDate,
+          vehicleFilter: _selectedVehicleFilter,
+        );
+
+        double heading = _lastValidHeading;
+        if (pos != null && pos.heading > 0 && pos.heading <= 360 && rawSpeed >= 1.0) {
           heading = pos.heading * (pi / 180.0);
+          _lastValidHeading = heading;
         } else if (liveRoutePoints.length >= 2) {
-          heading = calculateBearing(liveRoutePoints[liveRoutePoints.length - 2], liveRoutePoints.last);
+          final p1 = liveRoutePoints[liveRoutePoints.length - 2];
+          final p2 = liveRoutePoints.last;
+          if (approximateDistanceMeters(p1, p2) >= 2.0) {
+            heading = calculateBearing(p1, p2);
+            _lastValidHeading = heading;
+          }
+        } else if (dayTrips.isNotEmpty && dayTrips.first.points.length >= 2) {
+          final pts = dayTrips.first.points;
+          final p1 = ll.LatLng(pts[pts.length - 2].latitude, pts[pts.length - 2].longitude);
+          final p2 = ll.LatLng(pts.last.latitude, pts.last.longitude);
+          heading = calculateBearing(p1, p2);
+          _lastValidHeading = heading;
         }
 
         final now = DateTime.now();
         final isToday = _selectedDate.year == now.year &&
             _selectedDate.month == now.month &&
             _selectedDate.day == now.day;
-
-        // Fetch day's trips
-        final dayTrips = trackingService.getTripsForDate(
-          _selectedDate,
-          vehicleFilter: _selectedVehicleFilter,
-        );
 
         // Build distinct segments (Jaane Ka vs Aane Ka / Multiple trips)
         final segments = TripDirectionHelper.buildSegmentsForTrips(
@@ -781,8 +794,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
           markers.add(
             Marker(
               point: markerPoint,
-              width: 58,
-              height: 58,
+              width: 72,
+              height: 72,
               alignment: Alignment.center,
               child: VehicleMarkerWidget(
                 vehicleType: currentVehicle,
@@ -790,7 +803,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                 isLive: isActive,
                 isMoving: isMoving,
                 heading: heading,
-                size: 42.0,
+                size: 48.0,
               ),
             ),
           );
@@ -801,15 +814,16 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             markers.add(
               Marker(
                 point: lastPt,
-                width: 58,
-                height: 58,
+                width: 72,
+                height: 72,
                 alignment: Alignment.center,
                 child: VehicleMarkerWidget(
                   vehicleType: dayTrips.first.vehicleTypeEnum,
                   speedText: null,
                   isLive: false,
                   isMoving: false,
-                  size: 42.0,
+                  heading: heading,
+                  size: 48.0,
                   showBadge: false,
                 ),
               ),
