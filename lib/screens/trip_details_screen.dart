@@ -7,6 +7,7 @@ import '../core/app_colors.dart';
 import '../core/map_tiles.dart';
 import '../models/stoppage_model.dart';
 import '../models/trip_model.dart';
+import '../services/road_routing_service.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
 import '../widgets/stoppage_marker_widget.dart';
@@ -29,6 +30,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   double _sliderValue = 0.5;
   int _playbackSpeed = 1; // 1x, 2x, 4x
   Timer? _playbackTimer;
+  List<ll.LatLng>? _snappedRoute;
 
   late List<TripPoint> _points;
 
@@ -55,12 +57,31 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     super.initState();
     _points = List<TripPoint>.from(widget.trip.points);
     _loadTripPointsFromFirestore();
+    _snapTripRoute();
+  }
+
+  Future<void> _snapTripRoute() async {
+    final rawPts = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
+    if (rawPts.length >= 2) {
+      final snapped = await roadRoutingService.getRoadRoute(
+        tripId: widget.trip.id,
+        points: rawPts,
+      );
+      if (mounted && snapped.isNotEmpty && snapped != rawPts) {
+        setState(() {
+          _snappedRoute = snapped;
+        });
+        _fitTripBounds();
+      }
+    }
   }
 
   void _fitTripBounds() {
     if (!_isMapReady) return;
     try {
-      final activeList = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
+      final activeList = (_snappedRoute != null && _snappedRoute!.isNotEmpty)
+          ? _snappedRoute!
+          : _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
 
       if (activeList.length >= 2) {
         final bounds = LatLngBounds.fromPoints(activeList);
@@ -94,6 +115,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
         });
         if (pts.isNotEmpty) {
           _fitTripBounds();
+          _snapTripRoute();
         }
       }
     } catch (_) {}
@@ -170,7 +192,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final latLngList = _points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
-    final displayRoute = latLngList;
+    final displayRoute = (_snappedRoute != null && _snappedRoute!.isNotEmpty)
+        ? _snappedRoute!
+        : latLngList;
 
     final playbackIndex = displayRoute.isNotEmpty
         ? ((displayRoute.length - 1) * _sliderValue).round().clamp(0, displayRoute.length - 1)

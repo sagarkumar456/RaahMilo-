@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:trackmyphone/models/trip_model.dart';
+import 'package:trackmyphone/services/tracking_service.dart';
 
 void main() {
   group('GPS Tracking Functional & Regression Tests', () {
@@ -21,10 +22,18 @@ void main() {
         speedAccuracy: 0.0,
       );
 
-      // GPS jitter: 6 meters away, but speed is 0.1 m/s (phone still on table)
+      final anchorTripPoint = TripPoint(
+        latitude: pAnchor.latitude,
+        longitude: pAnchor.longitude,
+        speed: 0.0,
+        accuracy: 15.0,
+        timestamp: base,
+      );
+
+      // GPS jitter: 4 meters away, speed is 0.1 m/s (phone still on table)
       final pJitter = Position(
-        latitude: 28.613990,
-        longitude: 77.209050,
+        latitude: 28.613965,
+        longitude: 77.209040,
         timestamp: base.add(const Duration(seconds: 4)),
         accuracy: 18.0,
         altitude: 0.0,
@@ -35,21 +44,60 @@ void main() {
         speedAccuracy: 0.0,
       );
 
-      final step = Geolocator.distanceBetween(
-        pAnchor.latitude,
-        pAnchor.longitude,
-        pJitter.latitude,
-        pJitter.longitude,
+      final isGenuine = TrackingService.isGenuineMovement(
+        candidate: pJitter,
+        lastPoint: anchorTripPoint,
+        stationaryAnchor: pAnchor,
       );
 
-      // Verify physical distance is within jitter radius
-      expect(step < 12.0, true);
-      // Verify speed is below stationary threshold
-      expect(pJitter.speed < 0.6, true);
+      expect(isGenuine, false, reason: 'Stationary wander within desk anchor must be rejected');
+    });
 
-      // Under our stationary filter: (speed < 0.6 && step < 12.0) is rejected
-      final isStationaryJitter = pJitter.speed < 0.6 && step < 12.0;
-      expect(isStationaryJitter, true, reason: 'Stationary drift should be rejected from the movement path');
+    test('Real Walking Movement: Accepts incremental displacement even if sensor reports speed 0.0', () {
+      final base = DateTime(2026, 10, 20, 12, 5, 0);
+
+      final pStart = Position(
+        latitude: 28.610000,
+        longitude: 77.210000,
+        timestamp: base,
+        accuracy: 12.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 0.0,
+        headingAccuracy: 0.0,
+        speed: 0.0,
+        speedAccuracy: 0.0,
+      );
+
+      final lastTripPt = TripPoint(
+        latitude: pStart.latitude,
+        longitude: pStart.longitude,
+        speed: 0.0,
+        accuracy: 12.0,
+        timestamp: base,
+      );
+
+      // User walking: moved 8 meters in 4 seconds (~2.0 m/s), but raw sensor reports speed: 0.0
+      final pWalking = Position(
+        latitude: 28.610065,
+        longitude: 77.210040,
+        timestamp: base.add(const Duration(seconds: 4)),
+        accuracy: 14.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 45.0,
+        headingAccuracy: 0.0,
+        speed: 0.0, // Sensor didn't calculate Doppler speed
+        speedAccuracy: 0.0,
+      );
+
+      final isGenuine = TrackingService.isGenuineMovement(
+        candidate: pWalking,
+        lastPoint: lastTripPt,
+        stationaryAnchor: pStart,
+      );
+
+      expect(isGenuine, true, reason: 'Genuine walking displacement must be captured as phone moves');
     });
 
     test('Real Movement Through Point C: Intermediate waypoints are properly recorded', () {
@@ -124,22 +172,66 @@ void main() {
       final t1 = DateTime(2026, 10, 20, 15, 0, 0);
       final t2 = t1.add(const Duration(seconds: 2));
 
+      final lastPt = TripPoint(
+        latitude: 28.6100,
+        longitude: 77.2100,
+        speed: 5.0,
+        accuracy: 10.0,
+        timestamp: t1,
+      );
+
       // Coordinate jump of 500 meters in 2 seconds = 250 m/s = 900 km/h (impossible ground vehicle speed)
-      final lat1 = 28.6100;
-      final lng1 = 77.2100;
-      final lat2 = 28.6145;
-      final lng2 = 77.2145;
+      final pJump = Position(
+        latitude: 28.6145,
+        longitude: 77.2145,
+        timestamp: t2,
+        accuracy: 15.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 0.0,
+        headingAccuracy: 0.0,
+        speed: 250.0,
+        speedAccuracy: 0.0,
+      );
 
-      final step = Geolocator.distanceBetween(lat1, lng1, lat2, lng2);
-      final timeDiffSec = t2.difference(t1).inSeconds.abs();
-      final calcSpeed = step / timeDiffSec;
+      final isGenuine = TrackingService.isGenuineMovement(
+        candidate: pJump,
+        lastPoint: lastPt,
+      );
 
-      expect(calcSpeed > 60.0, true);
-      expect(step > 120.0, true);
+      expect(isGenuine, false, reason: 'Impossible physical speed jump must be rejected');
+    });
 
-      // Outlier jump condition
-      final isOutlierJump = timeDiffSec >= 1 && calcSpeed > 60.0 && step > 120.0;
-      expect(isOutlierJump, true, reason: 'Cell-tower flips / teleportation jumps must be rejected');
+    test('Gross Accuracy Filter: Discards cell-tower level inaccuracies (> 75m)', () {
+      final base = DateTime(2026, 10, 20, 16, 0, 0);
+
+      final lastPt = TripPoint(
+        latitude: 28.6100,
+        longitude: 77.2100,
+        speed: 2.0,
+        accuracy: 10.0,
+        timestamp: base,
+      );
+
+      final pCellTower = Position(
+        latitude: 28.6105,
+        longitude: 77.2105,
+        timestamp: base.add(const Duration(seconds: 3)),
+        accuracy: 120.0, // Cell tower triangulation
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 0.0,
+        headingAccuracy: 0.0,
+        speed: 1.5,
+        speedAccuracy: 0.0,
+      );
+
+      final isGenuine = TrackingService.isGenuineMovement(
+        candidate: pCellTower,
+        lastPoint: lastPt,
+      );
+
+      expect(isGenuine, false, reason: 'Accuracy > 75m indicates cellular triangulation and must be rejected from path');
     });
   });
 }
