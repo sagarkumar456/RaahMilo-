@@ -48,11 +48,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   VehicleType? _selectedVehicleFilter;
   StreamSubscription<Position>? _passivePositionSub;
 
-  // Real-time movement trail & Road snapped cache
+  // Road snapped route cache
   final Map<String, List<ll.LatLng>> _snappedTripRoutes = {};
   final Set<String> _pendingSnapTripIds = {};
-  final List<ll.LatLng> _passiveMovementTrail = [];
-  Position? _passiveAnchor;
 
   static const ll.LatLng _defaultCoord = ll.LatLng(20.5937, 78.9629); // India fallback
 
@@ -288,13 +286,16 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         final rawPts = trip.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList();
         roadRoutingService.getRoadRoute(tripId: trip.id, points: rawPts).then((snapped) {
           _pendingSnapTripIds.remove(trip.id);
-          if (mounted && snapped.isNotEmpty && snapped != rawPts) {
+          if (mounted) {
             setState(() {
               _snappedTripRoutes[trip.id] = snapped;
             });
           }
         }).catchError((_) {
           _pendingSnapTripIds.remove(trip.id);
+          if (mounted) {
+            _snappedTripRoutes[trip.id] = rawPts;
+          }
         });
       }
     }
@@ -308,47 +309,22 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         locationSettings: defaultTargetPlatform == TargetPlatform.android
             ? AndroidSettings(
                 accuracy: LocationAccuracy.high,
-                distanceFilter: 2, // 2m high sensitivity so phone movement is captured immediately
-                intervalDuration: const Duration(seconds: 2),
+                distanceFilter: 3,
+                intervalDuration: const Duration(seconds: 3),
               )
             : const LocationSettings(
                 accuracy: LocationAccuracy.high,
-                distanceFilter: 2,
+                distanceFilter: 3,
               ),
       ).listen((p) {
         if (!mounted || trackingService.active) return;
-        if (p.accuracy > 75.0) return;
+        if (p.accuracy > 70.0) return;
 
         trackingService.setCurrentPosition(p);
         final coord = ll.LatLng(p.latitude, p.longitude);
         _targetMarkerCoord = coord;
         if (_animatedMarkerCoord == null) {
           _animatedMarkerCoord = coord;
-        }
-
-        // Live movement trail as phone moves in real time
-        if (_passiveMovementTrail.isEmpty) {
-          _passiveMovementTrail.add(coord);
-          _passiveAnchor = p;
-        } else {
-          final lastCoord = _passiveMovementTrail.last;
-          final step = approximateDistanceMeters(lastCoord, coord);
-          final distFromAnchor = _passiveAnchor != null
-              ? approximateDistanceMeters(ll.LatLng(_passiveAnchor!.latitude, _passiveAnchor!.longitude), coord)
-              : step;
-          final timeDiff = _passiveAnchor != null
-              ? p.timestamp.difference(_passiveAnchor!.timestamp).inSeconds.abs()
-              : 2;
-          final calcSpeed = timeDiff > 0 ? (step / timeDiff) : p.speed;
-          final effectiveSpeed = max(p.speed, calcSpeed);
-
-          if (step >= 2.0 && (distFromAnchor >= 5.0 || effectiveSpeed >= 0.5)) {
-            _passiveMovementTrail.add(coord);
-            _passiveAnchor = p;
-            if (_passiveMovementTrail.length > 500) {
-              _passiveMovementTrail.removeAt(0);
-            }
-          }
         }
         if (mounted) setState(() {});
       }, onError: (_) {});
@@ -568,7 +544,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         setState(() {
           _selectedDate = DateTime.now();
           _isAutoFollowEnabled = true;
-          _passiveMovementTrail.clear();
         });
         await trackingService.start();
         _recenter();
@@ -611,11 +586,11 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             .map((p) => ll.LatLng(p.latitude, p.longitude))
             .toList();
 
-        // Connect polyline right up to the live moving vehicle marker position
-        if (isActive && liveRoutePoints.isNotEmpty) {
+        // Connect polyline right up to the live moving vehicle marker position only if in active motion
+        if (isActive && liveRoutePoints.isNotEmpty && trackingService.isMoving) {
           final liveTip = _animatedMarkerCoord ?? currentCoord;
           final lastPt = liveRoutePoints.last;
-          if (approximateDistanceMeters(lastPt, liveTip) >= 1.5) {
+          if (approximateDistanceMeters(lastPt, liveTip) >= 2.5) {
             liveRoutePoints.add(liveTip);
           }
         }
@@ -656,8 +631,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         final isToday = _selectedDate.year == now.year &&
             _selectedDate.month == now.month &&
             _selectedDate.day == now.day;
-
-        _snapTripsForCurrentDate();
 
         // Build distinct segments (Jaane Ka vs Aane Ka / Multiple trips)
         final segments = TripDirectionHelper.buildSegmentsForTrips(
@@ -860,27 +833,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
           }
         }
 
-        // Passive movement trail: renders dynamically as phone moves even before starting an active trip
-        if (!isActive && _passiveMovementTrail.length >= 2 && isToday) {
-          final passiveColor = TripDirectionHelper.colorPathGreen;
-          polylines.add(
-            Polyline(
-              points: _passiveMovementTrail,
-              strokeWidth: 6.5,
-              color: passiveColor.withValues(alpha: 0.25),
-            ),
-          );
-          polylines.add(
-            Polyline(
-              points: _passiveMovementTrail,
-              strokeWidth: 4.8,
-              color: passiveColor,
-            ),
-          );
-          arrowMarkers.addAll(
-            buildDirectionalArrowMarkers(_passiveMovementTrail, routeColor: passiveColor),
-          );
-        }
+
 
         // 3. User / Vehicle Position Marker
         if (pos != null) {

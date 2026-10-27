@@ -233,5 +233,141 @@ void main() {
 
       expect(isGenuine, false, reason: 'Accuracy > 75m indicates cellular triangulation and must be rejected from path');
     });
+
+    test('Stationary Anchor Crawl Prevention: Consecutive wander points around desk do NOT get accepted', () {
+      final base = DateTime(2026, 10, 20, 17, 0, 0);
+
+      final pAnchor = Position(
+        latitude: 28.613939,
+        longitude: 77.209021,
+        timestamp: base,
+        accuracy: 16.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 0.0,
+        headingAccuracy: 0.0,
+        speed: 0.0,
+        speedAccuracy: 0.0,
+      );
+
+      final anchorTripPt = TripPoint(
+        latitude: pAnchor.latitude,
+        longitude: pAnchor.longitude,
+        speed: 0.0,
+        accuracy: 16.0,
+        timestamp: base,
+      );
+
+      // Wander 1: 3.2m North
+      final wander1 = Position(
+        latitude: 28.613968,
+        longitude: 77.209021,
+        timestamp: base.add(const Duration(seconds: 2)),
+        accuracy: 18.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 0.0,
+        headingAccuracy: 0.0,
+        speed: 0.0,
+        speedAccuracy: 0.0,
+      );
+
+      // Wander 2: 4.5m East of original anchor
+      final wander2 = Position(
+        latitude: 28.613939,
+        longitude: 77.209067,
+        timestamp: base.add(const Duration(seconds: 4)),
+        accuracy: 20.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 90.0,
+        headingAccuracy: 0.0,
+        speed: 0.1,
+        speedAccuracy: 0.0,
+      );
+
+      // Wander 3: 3.8m South of original anchor
+      final wander3 = Position(
+        latitude: 28.613905,
+        longitude: 77.209021,
+        timestamp: base.add(const Duration(seconds: 6)),
+        accuracy: 19.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 180.0,
+        headingAccuracy: 0.0,
+        speed: 0.0,
+        speedAccuracy: 0.0,
+      );
+
+      // All wander points must be rejected relative to the anchor
+      expect(
+        TrackingService.isGenuineMovement(
+          candidate: wander1,
+          lastPoint: anchorTripPt,
+          stationaryAnchor: pAnchor,
+          isStationary: true,
+        ),
+        false,
+        reason: 'Wander 1 within anchor tolerance must be rejected',
+      );
+
+      expect(
+        TrackingService.isGenuineMovement(
+          candidate: wander2,
+          lastPoint: anchorTripPt,
+          stationaryAnchor: pAnchor,
+          isStationary: true,
+        ),
+        false,
+        reason: 'Wander 2 within anchor tolerance must be rejected',
+      );
+
+      expect(
+        TrackingService.isGenuineMovement(
+          candidate: wander3,
+          lastPoint: anchorTripPt,
+          stationaryAnchor: pAnchor,
+          isStationary: true,
+        ),
+        false,
+        reason: 'Wander 3 within anchor tolerance must be rejected',
+      );
+    });
+
+    test('In-Motion Curves & Corners: 3m incremental steps around Point C are captured without straight lines', () {
+      final base = DateTime(2026, 10, 20, 18, 0, 0);
+
+      // User actively moving (isStationary: false)
+      final pt1 = TripPoint(
+        latitude: 28.610000,
+        longitude: 77.210000,
+        speed: 1.2,
+        accuracy: 8.0,
+        timestamp: base,
+      );
+
+      // Step around corner C (3.5m away)
+      final pt2 = Position(
+        latitude: 28.610031,
+        longitude: 77.210000,
+        timestamp: base.add(const Duration(seconds: 2)),
+        accuracy: 9.0,
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 90.0,
+        headingAccuracy: 0.0,
+        speed: 1.1,
+        speedAccuracy: 0.0,
+      );
+
+      final isStepCaptured = TrackingService.isGenuineMovement(
+        candidate: pt2,
+        lastPoint: pt1,
+        isStationary: false,
+      );
+
+      expect(isStepCaptured, true, reason: 'In-motion 3.5m corner step must be captured so curves are smooth');
+    });
   });
 }

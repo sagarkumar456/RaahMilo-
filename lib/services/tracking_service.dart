@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -48,6 +49,12 @@ class TrackingService extends ChangeNotifier {
 
   Position? _stationaryAnchor;
   Position? get stationaryAnchor => _stationaryAnchor;
+
+  bool _isStationary = true;
+  bool get isStationary => _isStationary;
+  bool get isMoving => !_isStationary && _active;
+
+  int _stationaryFixCount = 0;
 
   String? _tripId;
   String? get tripId => _tripId;
@@ -235,6 +242,8 @@ class TrackingService extends ChangeNotifier {
       _points.clear();
       _tripPoints.clear();
       _stationaryAnchor = null;
+      _isStationary = true;
+      _stationaryFixCount = 0;
       _elapsed = Duration.zero;
 
       // Start elapsed timer
@@ -323,6 +332,7 @@ class TrackingService extends ChangeNotifier {
     required Position candidate,
     required TripPoint lastPoint,
     Position? stationaryAnchor,
+    bool isStationary = true,
   }) {
     // 1. Reject gross noise (cellular tower triangulation)
     if (candidate.accuracy > 75.0) return false;
@@ -335,33 +345,59 @@ class TrackingService extends ChangeNotifier {
       candidate.longitude,
     );
 
-    // Filter sub-noise sensor jitter (< 2.0m)
-    if (step < 2.0) return false;
-
-    // 3. Teleportation / Outlier Jump Filter (> 60 m/s = 216 km/h over large jump)
+    // 3. Teleportation / Outlier Jump Filter (> 55 m/s = 198 km/h over large jump)
     final timeDiffSec = candidate.timestamp.difference(lastPoint.timestamp).inSeconds.abs();
     final calcSpeed = timeDiffSec > 0 ? (step / timeDiffSec) : candidate.speed;
-    if (timeDiffSec >= 1 && calcSpeed > 60.0 && step > 120.0) {
+    if (timeDiffSec >= 1 && calcSpeed > 55.0 && step > 120.0) {
       return false;
     }
 
-    final effectiveSpeed = (candidate.speed > 0) ? (calcSpeed > 0 ? (candidate.speed + calcSpeed) / 2 : candidate.speed) : calcSpeed;
-
     // 4. Stationary Drift Filter:
-    // If phone is sitting on a table, satellite wander stays within anchor radius (< 6.5m) and speed is minimal (< 0.5 m/s)
-    if (stationaryAnchor != null) {
+    // When the phone is stationary or has an active stationary anchor,
+    // prevent indoor/desk satellite wander from creating spiderweb movements.
+    final anchor = stationaryAnchor;
+    if (isStationary && anchor != null) {
       final distFromAnchor = Geolocator.distanceBetween(
-        stationaryAnchor.latitude,
-        stationaryAnchor.longitude,
+        anchor.latitude,
+        anchor.longitude,
         candidate.latitude,
         candidate.longitude,
       );
-      if (distFromAnchor < 6.5 && effectiveSpeed < 0.5) {
+
+      // Adaptive anchor radius based on sensor accuracy:
+      // High-accuracy outdoor fixes (accuracy <= 10m) have tight 7.5m tolerance.
+      // Indoor / noisy fixes scale up to 18m tolerance to absorb indoor bounce.
+      final anchorTolerance = math.max(7.5, math.min(18.0, candidate.accuracy * 0.55));
+
+      // Inside anchor bubble: reject satellite drift unless speed indicates clear breakout motion
+      if (distFromAnchor < anchorTolerance) {
+        if (candidate.speed >= 1.4 && distFromAnchor >= 6.0) {
+          return true; // Fast breakout motion (e.g. accelerating vehicle or sprint)
+        }
+        if (calcSpeed >= 1.5 && distFromAnchor >= 6.5) {
+          return true; // Steady walking breakout
+        }
+        return false; // Stationary satellite jitter! Anchor remains locked.
+      }
+
+      // Moving beyond anchor bubble: check outlier speed relative to anchor
+      final anchorTimeDiffSec = candidate.timestamp.difference(anchor.timestamp).inSeconds.abs();
+      final anchorSpeed = anchorTimeDiffSec > 0 ? (distFromAnchor / anchorTimeDiffSec) : candidate.speed;
+      if (anchorTimeDiffSec >= 1 && anchorSpeed > 55.0 && distFromAnchor > 120.0) {
         return false;
       }
-    } else if (effectiveSpeed < 0.5 && step < 6.5) {
-      return false;
+
+      // Genuine breakout movement from stationary state!
+      return true;
     }
+
+    // 5. In-Motion Movement Evaluation (phone is actively moving):
+    // Discard sub-noise sensor jitter (< 2.5m) to avoid crowding points,
+    // but capture all turns, bends, and corner waypoints faithfully.
+    if (step < 2.5) return false;
+
+    // Discard degraded accuracy fixes while moving
+    if (candidate.accuracy > 70.0) return false;
 
     return true;
   }
@@ -374,7 +410,7 @@ class TrackingService extends ChangeNotifier {
     antiTheftService.checkPositionForTheft(p);
 
     // Reject coarse cell-tower triangulation fixes from movement path
-    if (p.accuracy > 75.0) {
+    if (p.accuracy > 70.0) {
       notifyListeners();
       return;
     }
@@ -382,6 +418,8 @@ class TrackingService extends ChangeNotifier {
     final bool isFirstPoint = _tripPoints.isEmpty;
     if (isFirstPoint) {
       _stationaryAnchor = p;
+      _isStationary = true;
+      _stationaryFixCount = 0;
       _points.add(LatLng(p.latitude, p.longitude));
       _tripPoints.add(TripPoint(
         latitude: p.latitude,
@@ -396,11 +434,35 @@ class TrackingService extends ChangeNotifier {
     }
 
     final lastPoint = _tripPoints.last;
-    if (!isGenuineMovement(
+    final genuine = isGenuineMovement(
       candidate: p,
       lastPoint: lastPoint,
       stationaryAnchor: _stationaryAnchor,
-    )) {
+      isStationary: _isStationary,
+    );
+
+    if (!genuine) {
+      // Not genuine movement.
+      // If we were in moving state, detect if device has now come to a complete stop
+      if (!_isStationary) {
+        final step = Geolocator.distanceBetween(
+          lastPoint.latitude,
+          lastPoint.longitude,
+          p.latitude,
+          p.longitude,
+        );
+        if (step < 6.0 && p.speed < 0.6) {
+          _stationaryFixCount++;
+          if (_stationaryFixCount >= 3) {
+            // Stopped at traffic light, cafe, or destination
+            _isStationary = true;
+            _stationaryAnchor = p;
+            _stationaryFixCount = 0;
+          }
+        } else {
+          _stationaryFixCount = 0;
+        }
+      }
       notifyListeners();
       return;
     }
@@ -412,9 +474,15 @@ class TrackingService extends ChangeNotifier {
       p.longitude,
     );
 
+    // If device was stationary, transition to moving state and unlock anchor
+    if (_isStationary) {
+      _isStationary = false;
+      _stationaryAnchor = null;
+      _stationaryFixCount = 0;
+    }
+
     // True genuine movement! Accumulate real distance
     _meters += step;
-    _stationaryAnchor = p; // Advance stationary anchor with real movement
     _points.add(LatLng(p.latitude, p.longitude));
     _tripPoints.add(TripPoint(
       latitude: p.latitude,
@@ -700,8 +768,8 @@ class TrackingService extends ChangeNotifier {
         accuracy: _current!.accuracy,
         timestamp: now,
       ));
-    } else if (finalPoints.isNotEmpty && _current != null) {
-      // Append destination point only if phone moved distinctly from last point with reasonable accuracy
+    } else if (finalPoints.isNotEmpty && _current != null && !_isStationary) {
+      // Append destination point only if phone was actively moving and moved distinctly with reasonable accuracy
       final lastPt = finalPoints.last;
       final endDist = Geolocator.distanceBetween(
         lastPt.latitude,
@@ -709,7 +777,7 @@ class TrackingService extends ChangeNotifier {
         _current!.latitude,
         _current!.longitude,
       );
-      if (endDist >= 2.0 && (_current!.accuracy <= 75.0)) {
+      if (endDist >= 3.0 && (_current!.accuracy <= 65.0)) {
         final destPt = TripPoint(
           latitude: _current!.latitude,
           longitude: _current!.longitude,
