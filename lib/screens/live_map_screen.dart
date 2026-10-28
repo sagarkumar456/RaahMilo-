@@ -491,23 +491,24 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
       if (isActive) {
         await trackingService.stop();
         if (mounted) {
+          final completedTrip = trackingService.historyTrips.isNotEmpty
+              ? trackingService.historyTrips.first
+              : null;
+          final completedTripId = completedTrip?.id;
+
           setState(() {
             _selectedDate = DateTime.now();
-            _selectedSegmentId = null;
+            _selectedSegmentId = completedTripId;
           });
 
-          final trips = trackingService.getTripsForDate(
-            _selectedDate,
-            vehicleFilter: _selectedVehicleFilter,
-          );
-          final pts = trips
-              .expand((t) => t.points.map((p) => ll.LatLng(p.latitude, p.longitude)))
-              .toList();
+          final completedPts = (completedTrip != null && completedTrip.points.isNotEmpty)
+              ? completedTrip.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList()
+              : <ll.LatLng>[];
 
-          if (pts.isNotEmpty) {
+          if (completedPts.isNotEmpty) {
             _snapTripsForCurrentDate();
             WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _fitRouteBounds(pts);
+              if (mounted) _fitRouteBounds(completedPts);
             });
           }
 

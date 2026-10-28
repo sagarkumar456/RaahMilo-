@@ -1,7 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart' as ll;
 import 'package:trackmyphone/models/trip_model.dart';
+import 'package:trackmyphone/services/road_routing_service.dart';
 import 'package:trackmyphone/services/tracking_service.dart';
+import 'package:trackmyphone/utils/trip_direction_helper.dart';
 
 void main() {
   group('GPS Tracking Functional & Regression Tests', () {
@@ -368,6 +371,45 @@ void main() {
       );
 
       expect(isStepCaptured, true, reason: 'In-motion 3.5m corner step must be captured so curves are smooth');
+    });
+
+    test('GPS Ground Truth: RoadRoutingService preserves authentic GPS breadcrumbs without detours', () async {
+      final pts = [
+        ll.LatLng(28.6139, 77.2090),
+        ll.LatLng(28.6142, 77.2093),
+        ll.LatLng(28.6145, 77.2096),
+      ];
+
+      final result = await roadRoutingService.getRoadRoute(tripId: 'test_trip', points: pts);
+      expect(result.length, pts.length);
+      expect(result[0].latitude, pts[0].latitude);
+      expect(result[1].latitude, pts[1].latitude);
+      expect(result[2].latitude, pts[2].latitude);
+    });
+
+    test('One-way trip (e.g. 95m) is NOT falsely classified or split as a round-trip', () {
+      final base = DateTime(2026, 10, 20, 10, 0, 0);
+      final p1 = TripPoint(latitude: 28.6100, longitude: 77.2100, speed: 1.2, accuracy: 6.0, timestamp: base);
+      final p2 = TripPoint(latitude: 28.6103, longitude: 77.2103, speed: 1.2, accuracy: 6.0, timestamp: base.add(const Duration(seconds: 30)));
+      final p3 = TripPoint(latitude: 28.6106, longitude: 77.2106, speed: 1.1, accuracy: 6.0, timestamp: base.add(const Duration(seconds: 60)));
+      final p4 = TripPoint(latitude: 28.6108, longitude: 77.2108, speed: 0.0, accuracy: 5.0, timestamp: base.add(const Duration(seconds: 90)));
+
+      final trip = TripModel(
+        id: 'oneway_95m',
+        title: 'Walk to Store',
+        ownerId: 'u1',
+        viewerIds: [],
+        startedAt: base,
+        endedAt: base.add(const Duration(seconds: 90)),
+        distanceMeters: 95.0,
+        isActive: false,
+        points: [p1, p2, p3, p4],
+      );
+
+      final segments = TripDirectionHelper.buildSegmentsForTrips([trip]);
+      expect(segments.length, 1, reason: 'A 95m one-way walk must remain a single segment, never split into Outward/Return');
+      expect(segments.first.isReturn, false);
+      expect(segments.first.directionLabel, 'Trip 1 • Outward');
     });
   });
 }

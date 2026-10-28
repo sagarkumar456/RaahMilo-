@@ -210,12 +210,13 @@ class TripDirectionHelper {
 
     final endDistFromStart = approximateDistanceMeters(start, end);
 
-    // If max distance is >= 80m, the turnaround is at least 2 points from the ends,
-    // and the trip returned back closer to start (within 55% of max distance, or within 120m)
-    final isRoundTrip = maxDistFromStart >= 80 &&
+    // A genuine round-trip requires traveling away from origin (>= 120m)
+    // and returning back close to the starting point (<= 35% of max distance AND <= 80m from start).
+    final hasReturnedNearStart = endDistFromStart <= (maxDistFromStart * 0.35) && endDistFromStart <= 80.0;
+    final isRoundTrip = maxDistFromStart >= 120.0 &&
         maxIdx >= 2 &&
         maxIdx <= coords.length - 3 &&
-        (endDistFromStart < (maxDistFromStart * 0.55) || endDistFromStart <= 120);
+        hasReturnedNearStart;
 
     if (isRoundTrip) {
       final outwardPts = coords.sublist(0, maxIdx + 1);

@@ -769,7 +769,6 @@ class TrackingService extends ChangeNotifier {
         timestamp: now,
       ));
     } else if (finalPoints.isNotEmpty && _current != null && !_isStationary) {
-      // Append destination point only if phone was actively moving and moved distinctly with reasonable accuracy
       final lastPt = finalPoints.last;
       final endDist = Geolocator.distanceBetween(
         lastPt.latitude,
@@ -777,7 +776,17 @@ class TrackingService extends ChangeNotifier {
         _current!.latitude,
         _current!.longitude,
       );
-      if (endDist >= 3.0 && (_current!.accuracy <= 65.0)) {
+      // Only append destination point if it passes genuine physical movement criteria,
+      // has high sensor accuracy (<= 25m), and represents a plausible final step (<= 25m).
+      if (endDist >= 2.5 &&
+          endDist <= 25.0 &&
+          _current!.accuracy <= 25.0 &&
+          isGenuineMovement(
+            candidate: _current!,
+            lastPoint: lastPt,
+            stationaryAnchor: _stationaryAnchor,
+            isStationary: _isStationary,
+          )) {
         final destPt = TripPoint(
           latitude: _current!.latitude,
           longitude: _current!.longitude,
