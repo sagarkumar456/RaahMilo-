@@ -37,8 +37,13 @@ class SharedDeviceModel {
 
   String get permissionLabel {
     if (permission == 'live_history') return 'Live + History';
-    if (expiresAt != null) return '24h Pass';
-    return 'Live Only';
+    if (expiresAt != null) {
+      final diff = expiresAt!.difference(DateTime.now());
+      if (diff.isNegative) return 'Expired';
+      if (diff.inHours >= 1) return '${diff.inHours}h left';
+      return '${diff.inMinutes}m left';
+    }
+    return 'Always Live';
   }
 
   factory SharedDeviceModel.fromFirestore(DocumentSnapshot doc) {

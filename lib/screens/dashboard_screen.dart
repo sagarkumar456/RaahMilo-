@@ -11,7 +11,6 @@ import 'anti_theft_screen.dart';
 import 'geofence_screen.dart';
 import 'location_disabled_screen.dart';
 import 'premium_screen.dart';
-import 'settings_screen.dart';
 import 'share_screen.dart';
 import 'shared_device_map_screen.dart';
 import 'shared_user_history_screen.dart';
@@ -454,15 +453,15 @@ class DashboardScreen extends StatelessWidget {
                   },
                 ),
                 _dashboardGridCard(
-                  icon: Icons.speed_rounded,
+                  icon: Icons.share_location_rounded,
                   iconColor: const Color(0xFF0D9488),
                   bgColor: const Color(0xFFCCFBF1),
-                  title: 'Speed & Safety',
-                  subtitle: 'Alert limits',
+                  title: 'Share Device',
+                  subtitle: 'Live location',
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                      MaterialPageRoute(builder: (_) => const ShareScreen()),
                     );
                   },
                 ),
@@ -683,7 +682,7 @@ class DashboardScreen extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
                 const Text(
-                  'Family & Live Sharing',
+                  'Devices Shared With You',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -707,39 +706,6 @@ class DashboardScreen extends StatelessWidget {
                       ),
                     ),
                   ),
-                const Spacer(),
-                InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (_) => const ShareScreen()),
-                    );
-                  },
-                  borderRadius: BorderRadius.circular(10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: AppColors.primaryLight,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.share_location_rounded, size: 14, color: AppColors.primary),
-                        SizedBox(width: 4),
-                        Text(
-                          'Share Hub',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 12),

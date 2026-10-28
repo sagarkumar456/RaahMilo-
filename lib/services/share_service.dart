@@ -177,6 +177,31 @@ class ShareService extends ChangeNotifier {
       debugPrint('Error revoking share: $e');
     }
   }
+
+  /// Stop all outgoing shares at once
+  Future<void> revokeAllMyShares() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    try {
+      final query = await FirebaseFirestore.instance
+          .collection('device_shares')
+          .where('ownerId', isEqualTo: user.uid)
+          .where('active', isEqualTo: true)
+          .get();
+
+      if (query.docs.isEmpty) return;
+
+      final batch = FirebaseFirestore.instance.batch();
+      for (final doc in query.docs) {
+        batch.update(doc.reference, {'active': false});
+      }
+      await batch.commit();
+    } catch (e) {
+      debugPrint('Error revoking all shares: $e');
+      rethrow;
+    }
+  }
 }
 
 final shareService = ShareService();
