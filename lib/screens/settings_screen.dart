@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/app_colors.dart';
 import '../services/anti_theft_service.dart';
@@ -324,6 +325,110 @@ class _SettingsScreenState extends State<SettingsScreen> {
           },
         );
       },
+    );
+  }
+
+  void _showBackgroundTrackingHelpDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.screen_lock_portrait_rounded, color: AppColors.primary),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Bag / Pocket Tracking Setup',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Agar aap phone ko bag ya pocket me rakh kar screen lock kar dete hain, to unbroken polyline route record karne ke liye ye 2 permissions zaroori hain:',
+              style: TextStyle(fontSize: 13, height: 1.4, color: AppColors.navyDark),
+            ),
+            const SizedBox(height: 14),
+            _buildSetupStep(
+              number: '1',
+              title: 'Location: "Allow all the time"',
+              subtitle: 'Phone settings me Location permission ko "Allow all the time" chunein taaki screen off hone par bhi updates milein.',
+            ),
+            const SizedBox(height: 10),
+            _buildSetupStep(
+              number: '2',
+              title: 'Battery: "Unrestricted"',
+              subtitle: 'Battery Optimization ko "Don\'t optimize" ya "Unrestricted" karein taaki Android Doze mode background GPS ko freeze na kare.',
+            ),
+            const SizedBox(height: 10),
+            _buildSetupStep(
+              number: '3',
+              title: 'Notifications Allowed',
+              subtitle: 'Foreground notification alert allow rakhein taaki OS background tracking service ko kill na kare.',
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Close'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Geolocator.openAppSettings();
+            },
+            icon: const Icon(Icons.settings_rounded, size: 16),
+            label: const Text('Open App Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSetupStep({
+    required String number,
+    required String title,
+    required String subtitle,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: AppColors.primary,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            number,
+            style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.navyDark)),
+              const SizedBox(height: 2),
+              Text(subtitle, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary, height: 1.3)),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -720,6 +825,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       },
                     ),
                   ],
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // 5. Bag & Background Tracking Mode Setup
+              _buildSectionHeader('Bag & Background Tracking'),
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFEFF6FF),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.screen_lock_portrait_rounded, color: Color(0xFF2563EB)),
+                  ),
+                  title: const Text('Bag / Pocket Tracking Guide', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  subtitle: const Text('Settings required to record complete polyline route with screen locked or in bag', style: TextStyle(fontSize: 12)),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                  onTap: _showBackgroundTrackingHelpDialog,
                 ),
               ),
 

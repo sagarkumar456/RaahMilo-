@@ -65,6 +65,9 @@ class TrackingService extends ChangeNotifier {
   bool _starting = false;
   bool get starting => _starting;
 
+  bool _isBackgroundPermissionGranted = true;
+  bool get isBackgroundPermissionGranted => _isBackgroundPermissionGranted;
+
   double _meters = 0.0;
   double get meters => _meters;
 
@@ -236,6 +239,7 @@ class TrackingService extends ChangeNotifier {
           permission == LocationPermission.deniedForever) {
         throw Exception('Location permission is required for live tracking.');
       }
+      _isBackgroundPermissionGranted = (permission == LocationPermission.always);
 
       _began = DateTime.now();
       _meters = 0.0;
@@ -328,14 +332,18 @@ class TrackingService extends ChangeNotifier {
 
   /// Evaluates whether a new candidate position [candidate] represents genuine physical movement
   /// rather than stationary GPS jitter or outlier sensor telemetry.
+  /// Accommodates in-bag/in-pocket GPS signal attenuation (up to 100m accuracy) while
+  /// rejecting gross cellular tower triangulation (> 100m).
   static bool isGenuineMovement({
     required Position candidate,
     required TripPoint lastPoint,
     Position? stationaryAnchor,
     bool isStationary = true,
   }) {
-    // 1. Reject gross noise (cellular tower triangulation)
-    if (candidate.accuracy > 75.0) return false;
+    // 1. Reject gross noise (cellular tower triangulation: > 100m)
+    // Note: Phones inside bags, pockets, or glove compartments experience satellite signal
+    // attenuation where accuracy typically ranges between 35m - 95m.
+    if (candidate.accuracy > 100.0) return false;
 
     // 2. Physical displacement from last registered point
     final step = Geolocator.distanceBetween(
@@ -366,15 +374,16 @@ class TrackingService extends ChangeNotifier {
 
       // Adaptive anchor radius based on sensor accuracy:
       // High-accuracy outdoor fixes (accuracy <= 10m) have tight 7.5m tolerance.
-      // Indoor / noisy fixes scale up to 18m tolerance to absorb indoor bounce.
-      final anchorTolerance = math.max(7.5, math.min(18.0, candidate.accuracy * 0.55));
+      // Indoor / in-bag fixes scale up to 20m tolerance to absorb indoor bounce.
+      final anchorTolerance = math.max(7.5, math.min(20.0, candidate.accuracy * 0.55));
 
       // Inside anchor bubble: reject satellite drift unless speed indicates clear breakout motion
+      // Lowered to 0.8 m/s so normal walking pace (3-4 km/h) with phone inside a bag/pocket breaks out cleanly.
       if (distFromAnchor < anchorTolerance) {
-        if (candidate.speed >= 1.4 && distFromAnchor >= 6.0) {
-          return true; // Fast breakout motion (e.g. accelerating vehicle or sprint)
+        if (candidate.speed >= 0.8 && distFromAnchor >= 4.5) {
+          return true; // Steady walking breakout motion with phone in bag
         }
-        if (calcSpeed >= 1.5 && distFromAnchor >= 6.5) {
+        if (calcSpeed >= 0.9 && distFromAnchor >= 5.0) {
           return true; // Steady walking breakout
         }
         return false; // Stationary satellite jitter! Anchor remains locked.
@@ -392,12 +401,12 @@ class TrackingService extends ChangeNotifier {
     }
 
     // 5. In-Motion Movement Evaluation (phone is actively moving):
-    // Discard sub-noise sensor jitter (< 2.5m) to avoid crowding points,
+    // Discard sub-noise sensor jitter (< 1.8m) to avoid crowding points,
     // but capture all turns, bends, and corner waypoints faithfully.
-    if (step < 2.5) return false;
+    if (step < 1.8) return false;
 
-    // Discard degraded accuracy fixes while moving
-    if (candidate.accuracy > 70.0) return false;
+    // Discard gross cellular tower triangulation fixes while moving (> 100m)
+    if (candidate.accuracy > 100.0) return false;
 
     return true;
   }
@@ -409,8 +418,9 @@ class TrackingService extends ChangeNotifier {
     geocodingService.updateFromPosition(p.latitude, p.longitude);
     antiTheftService.checkPositionForTheft(p);
 
-    // Reject coarse cell-tower triangulation fixes from movement path
-    if (p.accuracy > 70.0) {
+    // Reject coarse cell-tower triangulation fixes (> 100m) from movement path.
+    // In-bag or pocket positioning typically maintains 30m - 95m accuracy.
+    if (p.accuracy > 100.0) {
       notifyListeners();
       return;
     }
@@ -566,12 +576,12 @@ class TrackingService extends ChangeNotifier {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 2, // 2m filter captures precise turns and walking movement
+        distanceFilter: 0, // 0 ensures Android delivers regular time-based updates even when phone is in bag/pocket with screen off
         forceLocationManager: false, // Google Play Services Fused Location
-        intervalDuration: const Duration(seconds: 2), // 2-second high-precision stream
+        intervalDuration: const Duration(seconds: 3), // 3-second consistent stream
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: "RaahMilo is Active",
-          notificationText: "Live GPS tracking in progress...",
+          notificationTitle: "RaahMilo Tracking Active",
+          notificationText: "Live GPS route recording in progress...",
           enableWakeLock: true,
           setOngoing: true,
           color: Color(0xFF10B981),
@@ -582,14 +592,14 @@ class TrackingService extends ChangeNotifier {
       return AppleSettings(
         accuracy: LocationAccuracy.high,
         activityType: ActivityType.fitness,
-        distanceFilter: 2,
+        distanceFilter: 0,
         pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,
       );
     } else {
       return const LocationSettings(
         accuracy: LocationAccuracy.high,
-        distanceFilter: 2,
+        distanceFilter: 0,
       );
     }
   }

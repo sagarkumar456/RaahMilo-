@@ -550,16 +550,30 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         _recenter();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
+            SnackBar(
               content: Row(
                 children: [
-                  Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 20),
-                  SizedBox(width: 8),
-                  Text('Live tracking started'),
+                  const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      trackingService.isBackgroundPermissionGranted
+                          ? 'Live tracking started'
+                          : 'Tracking started. For bag/pocket route recording, allow "All the time" location in Settings.',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
                 ],
               ),
+              action: trackingService.isBackgroundPermissionGranted
+                  ? null
+                  : SnackBarAction(
+                      label: 'Settings',
+                      textColor: Colors.amberAccent,
+                      onPressed: () => Geolocator.openAppSettings(),
+                    ),
               backgroundColor: AppColors.primary,
-              duration: Duration(seconds: 2),
+              duration: Duration(seconds: trackingService.isBackgroundPermissionGranted ? 2 : 4),
             ),
           );
         }

@@ -205,7 +205,7 @@ void main() {
       expect(isGenuine, false, reason: 'Impossible physical speed jump must be rejected');
     });
 
-    test('Gross Accuracy Filter: Discards cell-tower level inaccuracies (> 75m)', () {
+    test('Gross Accuracy Filter: Discards cell-tower level inaccuracies (> 100m)', () {
       final base = DateTime(2026, 10, 20, 16, 0, 0);
 
       final lastPt = TripPoint(
@@ -234,7 +234,40 @@ void main() {
         lastPoint: lastPt,
       );
 
-      expect(isGenuine, false, reason: 'Accuracy > 75m indicates cellular triangulation and must be rejected from path');
+      expect(isGenuine, false, reason: 'Accuracy > 100m indicates cellular triangulation and must be rejected from path');
+    });
+
+    test('In-Bag / In-Pocket GPS: Accepts legitimate movement when accuracy is moderately degraded (30m-95m)', () {
+      final base = DateTime(2026, 10, 20, 16, 30, 0);
+
+      final lastPt = TripPoint(
+        latitude: 28.6100,
+        longitude: 77.2100,
+        speed: 1.2,
+        accuracy: 15.0,
+        timestamp: base,
+      );
+
+      // Phone inside bag/backpack: moved 15m in 5s (~3 m/s), but accuracy degraded to 85m due to fabric
+      final pInBag = Position(
+        latitude: 28.61012,
+        longitude: 77.21008,
+        timestamp: base.add(const Duration(seconds: 5)),
+        accuracy: 85.0, // Degraded satellite signal inside backpack/bag
+        altitude: 0.0,
+        altitudeAccuracy: 0.0,
+        heading: 30.0,
+        headingAccuracy: 0.0,
+        speed: 1.1,
+        speedAccuracy: 0.0,
+      );
+
+      final isGenuine = TrackingService.isGenuineMovement(
+        candidate: pInBag,
+        lastPoint: lastPt,
+      );
+
+      expect(isGenuine, true, reason: 'Phone inside bag or pocket with accuracy between 30m-95m must be recorded on polyline');
     });
 
     test('Stationary Anchor Crawl Prevention: Consecutive wander points around desk do NOT get accepted', () {
