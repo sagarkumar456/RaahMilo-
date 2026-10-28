@@ -13,6 +13,8 @@ class SharedDeviceModel {
   final String address;
   final DateTime updatedAt;
   final String? tripId;
+  final String permission;
+  final DateTime? expiresAt;
 
   SharedDeviceModel({
     required this.id,
@@ -27,7 +29,17 @@ class SharedDeviceModel {
     required this.address,
     required this.updatedAt,
     this.tripId,
+    this.permission = 'live_only',
+    this.expiresAt,
   });
+
+  bool get isExpired => expiresAt != null && DateTime.now().isAfter(expiresAt!);
+
+  String get permissionLabel {
+    if (permission == 'live_history') return 'Live + History';
+    if (expiresAt != null) return '24h Pass';
+    return 'Live Only';
+  }
 
   factory SharedDeviceModel.fromFirestore(DocumentSnapshot doc) {
     final data = doc.data() as Map<String, dynamic>? ?? {};
@@ -63,6 +75,8 @@ class SharedDeviceModel {
           : 'Live Location Active',
       updatedAt: ts.toDate(),
       tripId: data['tripId'] as String?,
+      permission: data['permission'] as String? ?? 'live_only',
+      expiresAt: (data['expiresAt'] as Timestamp?)?.toDate(),
     );
   }
 }

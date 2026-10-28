@@ -740,13 +740,15 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             }
 
             // End Marker with destination badge
+            final endArrivalTime = seg.endedAt ?? DateTime.now();
+            final segDuration = (seg.endedAt ?? DateTime.now()).difference(seg.startedAt);
             final endStop = StoppageModel(
               stopNumber: 1,
               latitude: pts.last.latitude,
               longitude: pts.last.longitude,
-              arrivedAt: seg.endedAt ?? seg.startedAt,
-              departedAt: seg.endedAt ?? seg.startedAt,
-              duration: Duration.zero,
+              arrivedAt: endArrivalTime,
+              departedAt: endArrivalTime,
+              duration: segDuration,
               isEndStop: true,
             );
 

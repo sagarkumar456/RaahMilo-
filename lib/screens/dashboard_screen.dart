@@ -11,6 +11,7 @@ import 'anti_theft_screen.dart';
 import 'geofence_screen.dart';
 import 'location_disabled_screen.dart';
 import 'premium_screen.dart';
+import 'settings_screen.dart';
 import 'share_screen.dart';
 import 'shared_device_map_screen.dart';
 import 'shared_user_history_screen.dart';
@@ -453,15 +454,15 @@ class DashboardScreen extends StatelessWidget {
                   },
                 ),
                 _dashboardGridCard(
-                  icon: Icons.share_location_rounded,
+                  icon: Icons.speed_rounded,
                   iconColor: const Color(0xFF0D9488),
                   bgColor: const Color(0xFFCCFBF1),
-                  title: 'Share Device',
-                  subtitle: 'Allow others',
+                  title: 'Speed & Safety',
+                  subtitle: 'Alert limits',
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const ShareScreen()),
+                      MaterialPageRoute(builder: (_) => const SettingsScreen()),
                     );
                   },
                 ),
@@ -675,14 +676,14 @@ class DashboardScreen extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(
-                    Icons.share_location_rounded,
+                    Icons.family_restroom_rounded,
                     color: Color(0xFF10B981),
                     size: 20,
                   ),
                 ),
                 const SizedBox(width: 10),
                 const Text(
-                  'Shared With You',
+                  'Family & Live Sharing',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.w800,
@@ -707,14 +708,37 @@ class DashboardScreen extends StatelessWidget {
                     ),
                   ),
                 const Spacer(),
-                TextButton(
-                  onPressed: () {
+                InkWell(
+                  onTap: () {
                     Navigator.push(
                       context,
                       MaterialPageRoute(builder: (_) => const ShareScreen()),
                     );
                   },
-                  child: const Text('Share Mine'),
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primaryLight,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.share_location_rounded, size: 14, color: AppColors.primary),
+                        SizedBox(width: 4),
+                        Text(
+                          'Share Hub',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),

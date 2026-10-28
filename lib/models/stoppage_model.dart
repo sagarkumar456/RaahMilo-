@@ -29,13 +29,15 @@ class StoppageModel {
   ll.LatLng get latLng => ll.LatLng(latitude, longitude);
 
   String get formattedDuration {
-    if (isEndStop || isStart) return '';
+    if (isStart) return '';
     final mins = duration.inMinutes;
     final secs = duration.inSeconds % 60;
     if (mins >= 60) {
       return '${mins ~/ 60}h ${mins % 60}m';
     } else if (mins > 0) {
       return '$mins min${mins > 1 ? "s" : ""}';
+    } else if (isEndStop) {
+      return '';
     } else {
       return '$secs sec';
     }
@@ -47,14 +49,14 @@ class StoppageModel {
       return 'Started at ${format.format(arrivedAt)}';
     }
     if (isEndStop) {
-      return 'Stopped at ${format.format(arrivedAt)}';
+      return 'Arrived at ${format.format(arrivedAt)}';
     }
     return '${format.format(arrivedAt)} - ${format.format(departedAt)}';
   }
 
   String get title {
     if (isStart) return 'Start Point';
-    if (isEndStop) return 'End Stoppage';
+    if (isEndStop) return 'Trip Destination';
     return 'Stop #$stopNumber';
   }
 
@@ -88,7 +90,7 @@ class StoppageModel {
 List<StoppageModel> extractStoppages(
   List<TripPoint> points, {
   Duration minDuration = const Duration(seconds: 30),
-  double distanceThresholdMeters = 28.0,
+  double distanceThresholdMeters = 30.0,
 }) {
   if (points.length < 2) return [];
 
@@ -114,81 +116,83 @@ List<StoppageModel> extractStoppages(
       pt.longitude,
     );
 
-    // If point is close to the anchor and speed is low, it's part of the same halt
+    // If point is close to the anchor and speed is low (< 2.0 m/s = 7.2 km/h)
     if (dist <= distanceThresholdMeters && pt.speed < 2.0) {
       currentHalt.add(pt);
     } else {
-      // Movement detected. Check if previous stationary points formed a stoppage
-      if (currentHalt.length >= 2) {
-        final startHalt = currentHalt.first.timestamp;
-        final endHalt = currentHalt.last.timestamp;
-        final haltDuration = endHalt.difference(startHalt);
+      // Movement detected away from anchor.
+      // Check if previous stationary points formed a stoppage.
+      final startHalt = currentHalt.first.timestamp;
 
-        // Don't treat the very start of the trip as an intermediate stop
-        final isAtTripStart = (i - currentHalt.length) <= 1;
+      // Telemetry speed check across the departure gap
+      final distFromLast = Geolocator.distanceBetween(
+        currentHalt.last.latitude,
+        currentHalt.last.longitude,
+        pt.latitude,
+        pt.longitude,
+      );
+      final gapSeconds = pt.timestamp.difference(currentHalt.last.timestamp).inSeconds;
+      final impliedSpeedMps = gapSeconds > 0 ? (distFromLast / gapSeconds) : 0.0;
 
-        if (haltDuration >= minDuration && !isAtTripStart) {
-          // Calculate centroid of halt
-          double sumLat = 0;
-          double sumLng = 0;
-          for (final p in currentHalt) {
-            sumLat += p.latitude;
-            sumLng += p.longitude;
-          }
-          final avgLat = sumLat / currentHalt.length;
-          final avgLng = sumLng / currentHalt.length;
+      // If implied speed across the gap is high (> 8.0 m/s = ~29 km/h), vehicle was traveling
+      // during a telemetry gap (e.g. tunnel), so end halt at currentHalt.last.
+      // Otherwise, the vehicle was stationary until it departed at pt.timestamp.
+      final DateTime endHalt;
+      if (impliedSpeedMps > 8.0) {
+        endHalt = currentHalt.last.timestamp;
+      } else {
+        endHalt = pt.timestamp;
+      }
 
-          stoppages.add(StoppageModel(
-            stopNumber: stopCounter++,
-            latitude: avgLat,
-            longitude: avgLng,
-            arrivedAt: startHalt,
-            departedAt: endHalt,
-            duration: haltDuration,
-            isEndStop: false,
-          ));
+      final haltDuration = endHalt.difference(startHalt);
+      final isAtTripStart = (i - currentHalt.length) == 0;
+      final hasStationaryProof = currentHalt.length >= 2 || currentHalt.first.speed < 1.0;
+
+      if (haltDuration >= minDuration && !isAtTripStart && hasStationaryProof) {
+        // Calculate centroid of halt
+        double sumLat = 0;
+        double sumLng = 0;
+        for (final p in currentHalt) {
+          sumLat += p.latitude;
+          sumLng += p.longitude;
         }
+        final avgLat = sumLat / currentHalt.length;
+        final avgLng = sumLng / currentHalt.length;
+
+        stoppages.add(StoppageModel(
+          stopNumber: stopCounter++,
+          latitude: avgLat,
+          longitude: avgLng,
+          arrivedAt: startHalt,
+          departedAt: endHalt,
+          duration: haltDuration,
+          isEndStop: false,
+        ));
       }
       currentHalt = [pt];
     }
   }
 
-  // Check if remaining points at the very end formed an intermediate stoppage
-  if (currentHalt.length >= 2) {
-    final startHalt = currentHalt.first.timestamp;
-    final endHalt = currentHalt.last.timestamp;
-    final haltDuration = endHalt.difference(startHalt);
-    if (haltDuration >= minDuration && (points.length - currentHalt.length > 2)) {
-      double sumLat = 0;
-      double sumLng = 0;
-      for (final p in currentHalt) {
-        sumLat += p.latitude;
-        sumLng += p.longitude;
-      }
-      stoppages.add(StoppageModel(
-        stopNumber: stopCounter++,
-        latitude: sumLat / currentHalt.length,
-        longitude: sumLng / currentHalt.length,
-        arrivedAt: startHalt,
-        departedAt: endHalt,
-        duration: haltDuration,
-        isEndStop: false,
-      ));
-    }
-  }
-
-  // 2. ALWAYS create the End Stoppage ("na end stopage banana hai")
+  // 2. Process final stationary points and ALWAYS create the End Stoppage
   final lastPoint = points.last;
-  final tripStart = points.first.timestamp;
-  final totalTripDuration = lastPoint.timestamp.difference(tripStart);
+  final DateTime endArrivalTime;
+  final Duration endParkedDuration;
+
+  if (currentHalt.isNotEmpty && currentHalt.first != points.first) {
+    endArrivalTime = currentHalt.first.timestamp;
+    endParkedDuration = lastPoint.timestamp.difference(currentHalt.first.timestamp);
+  } else {
+    endArrivalTime = lastPoint.timestamp;
+    endParkedDuration = Duration.zero;
+  }
 
   stoppages.add(StoppageModel(
     stopNumber: stopCounter,
     latitude: lastPoint.latitude,
     longitude: lastPoint.longitude,
-    arrivedAt: lastPoint.timestamp,
+    arrivedAt: endArrivalTime,
     departedAt: lastPoint.timestamp,
-    duration: totalTripDuration,
+    duration: endParkedDuration,
     isEndStop: true,
   ));
 

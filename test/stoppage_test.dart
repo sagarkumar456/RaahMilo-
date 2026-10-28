@@ -33,16 +33,43 @@ void main() {
       final intermediate = stoppages.where((s) => !s.isEndStop).toList();
       expect(intermediate.length, 1);
       expect(intermediate.first.stopNumber, 1);
-      expect(intermediate.first.duration.inMinutes, 5);
-      expect(intermediate.first.formattedDuration, '5 mins');
+      // Stoppage started at p3 (min 3) and vehicle departed at p6 (min 10) = 7 minutes
+      expect(intermediate.first.duration.inMinutes, 7);
+      expect(intermediate.first.formattedDuration, '7 mins');
+      expect(intermediate.first.arrivedAt, p3.timestamp);
+      expect(intermediate.first.departedAt, p6.timestamp);
 
       // Verify End Stoppage ("na end stopage banana hai")
       final endStops = stoppages.where((s) => s.isEndStop).toList();
       expect(endStops.length, 1);
       expect(endStops.first.isEndStop, true);
-      expect(endStops.first.title, 'End Stoppage');
+      expect(endStops.first.title, 'Trip Destination');
       expect(endStops.first.latitude, p8.latitude);
       expect(endStops.first.longitude, p8.longitude);
+    });
+
+    test('Detects halt during stationary GPS throttle when only 1 ping logged before departure', () {
+      final base = DateTime(2026, 10, 19, 14, 0, 0);
+
+      // Moving point
+      final p1 = TripPoint(latitude: 28.6100, longitude: 77.2100, speed: 6.0, accuracy: 3.0, timestamp: base);
+
+      // Stops at red light / store for 3 minutes (single point logged because stationary filter throttled)
+      final p2 = TripPoint(latitude: 28.6120, longitude: 77.2120, speed: 0.1, accuracy: 3.0, timestamp: base.add(const Duration(minutes: 1)));
+
+      // Movement resumes 3 minutes later
+      final p3 = TripPoint(latitude: 28.6140, longitude: 77.2140, speed: 5.5, accuracy: 3.0, timestamp: base.add(const Duration(minutes: 4)));
+
+      // Trip ends
+      final p4 = TripPoint(latitude: 28.6160, longitude: 77.2160, speed: 0.0, accuracy: 3.0, timestamp: base.add(const Duration(minutes: 6)));
+
+      final stoppages = extractStoppages([p1, p2, p3, p4]);
+
+      final intermediate = stoppages.where((s) => !s.isEndStop).toList();
+      expect(intermediate.length, 1);
+      expect(intermediate.first.duration.inMinutes, 3);
+      expect(intermediate.first.arrivedAt, p2.timestamp);
+      expect(intermediate.first.departedAt, p3.timestamp);
     });
   });
 }

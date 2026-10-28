@@ -13,7 +13,11 @@ class ShareService extends ChangeNotifier {
   ShareService._internal();
 
   /// Share current user's live location with another user by email
-  Future<void> shareLocationWith(String recipientEmail) async {
+  Future<void> shareLocationWith(
+    String recipientEmail, {
+    String permission = 'live_only',
+    Duration? expiryDuration,
+  }) async {
     final cleanEmail = recipientEmail.trim().toLowerCase();
     if (cleanEmail.isEmpty) return;
 
@@ -30,24 +34,34 @@ class ShareService extends ChangeNotifier {
 
     final docId = '${uid}_to_${cleanEmail.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_')}';
 
-    try {
-      await FirebaseFirestore.instance.collection('device_shares').doc(docId).set({
-        'ownerId': uid,
-        'ownerEmail': userEmail,
-        'ownerName': userName,
-        'sharedWithEmail': cleanEmail,
-        'active': true,
-        'tripId': trackingService.tripId ?? '',
-        'lastLocation': {
-          'lat': lat,
-          'lng': lng,
-          'speed': speed,
-          'address': address,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
+    final dataToSave = <String, dynamic>{
+      'ownerId': uid,
+      'ownerEmail': userEmail,
+      'ownerName': userName,
+      'sharedWithEmail': cleanEmail,
+      'active': true,
+      'permission': permission,
+      'tripId': trackingService.tripId ?? '',
+      'lastLocation': {
+        'lat': lat,
+        'lng': lng,
+        'speed': speed,
+        'address': address,
         'updatedAt': FieldValue.serverTimestamp(),
-        'createdAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      },
+      'updatedAt': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    };
+
+    if (expiryDuration != null) {
+      dataToSave['expiresAt'] = Timestamp.fromDate(DateTime.now().add(expiryDuration));
+    }
+
+    try {
+      await FirebaseFirestore.instance.collection('device_shares').doc(docId).set(
+        dataToSave,
+        SetOptions(merge: true),
+      );
 
       // Also attach to active trip if tracking
       final tripId = trackingService.tripId;
@@ -113,6 +127,27 @@ class ShareService extends ChangeNotifier {
     return FirebaseFirestore.instance
         .collection('device_shares')
         .where('sharedWithEmail', isEqualTo: myEmail)
+        .where('active', isEqualTo: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs
+          .map((doc) => SharedDeviceModel.fromFirestore(doc))
+          .toList();
+    });
+  }
+
+  /// Real-time stream of people the current user has shared their location with
+  Stream<List<SharedDeviceModel>> getMySharedWithOthersStream() {
+    final user = FirebaseAuth.instance.currentUser;
+    final uid = user?.uid;
+
+    if (uid == null || uid.isEmpty) {
+      return Stream.value(<SharedDeviceModel>[]);
+    }
+
+    return FirebaseFirestore.instance
+        .collection('device_shares')
+        .where('ownerId', isEqualTo: uid)
         .where('active', isEqualTo: true)
         .snapshots()
         .map((snapshot) {

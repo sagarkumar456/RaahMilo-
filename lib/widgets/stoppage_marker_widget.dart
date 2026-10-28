@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../core/app_colors.dart';
 import '../models/stoppage_model.dart';
 
@@ -255,14 +256,24 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: stoppage.isEndStop
-                      ? const Color(0xFFDC2626).withValues(alpha: 0.12)
-                      : const Color(0xFFF59E0B).withValues(alpha: 0.12),
+                  color: stoppage.isStart
+                      ? AppColors.success.withValues(alpha: 0.12)
+                      : stoppage.isEndStop
+                          ? const Color(0xFFDC2626).withValues(alpha: 0.12)
+                          : const Color(0xFFF59E0B).withValues(alpha: 0.12),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
-                  stoppage.isEndStop ? Icons.flag_rounded : Icons.pause_circle_filled_rounded,
-                  color: stoppage.isEndStop ? const Color(0xFFDC2626) : const Color(0xFFF59E0B),
+                  stoppage.isStart
+                      ? Icons.trip_origin_rounded
+                      : stoppage.isEndStop
+                          ? Icons.flag_rounded
+                          : Icons.pause_circle_filled_rounded,
+                  color: stoppage.isStart
+                      ? AppColors.success
+                      : stoppage.isEndStop
+                          ? const Color(0xFFDC2626)
+                          : const Color(0xFFF59E0B),
                   size: 24,
                 ),
               ),
@@ -280,12 +291,18 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
                       ),
                     ),
                     Text(
-                      stoppage.isEndStop
-                          ? 'Final Destination Stoppage'
-                          : 'Halted for ${stoppage.formattedDuration}',
+                      stoppage.isStart
+                          ? 'Trip Started at ${DateFormat('hh:mm a').format(stoppage.arrivedAt)}'
+                          : stoppage.isEndStop
+                              ? 'Arrived at ${DateFormat('hh:mm a').format(stoppage.arrivedAt)}'
+                              : 'Halted for ${stoppage.formattedDuration}',
                       style: TextStyle(
                         fontSize: 12.5,
-                        color: stoppage.isEndStop ? const Color(0xFFDC2626) : const Color(0xFFF59E0B),
+                        color: stoppage.isStart
+                            ? AppColors.success
+                            : stoppage.isEndStop
+                                ? const Color(0xFFDC2626)
+                                : const Color(0xFFF59E0B),
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -307,34 +324,105 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
             ),
             child: Column(
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.access_time_rounded, size: 16, color: AppColors.textSecondary),
-                    const SizedBox(width: 8),
-                    Text(
-                      stoppage.isEndStop ? 'Stop Time:' : 'Halt Duration:',
-                      style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                    ),
-                    const Spacer(),
-                    Text(
-                      stoppage.isEndStop ? stoppage.formattedTime : stoppage.formattedDuration,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                    ),
-                  ],
-                ),
-                const Divider(height: 14),
-                Row(
-                  children: [
-                    const Icon(Icons.timeline_rounded, size: 16, color: AppColors.textSecondary),
-                    const SizedBox(width: 8),
-                    const Text('Time Details:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-                    const Spacer(),
-                    Text(
-                      stoppage.formattedTime,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.navyDark),
-                    ),
-                  ],
-                ),
+                if (!stoppage.isStart && !stoppage.isEndStop) ...[
+                  Row(
+                    children: [
+                      const Icon(Icons.timer_outlined, size: 16, color: Color(0xFFF59E0B)),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'Halt Duration:',
+                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                      ),
+                      const Spacer(),
+                      Text(
+                        stoppage.formattedDuration,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFFD97706),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 14),
+                  Row(
+                    children: [
+                      const Icon(Icons.login_rounded, size: 16, color: AppColors.textSecondary),
+                      const SizedBox(width: 8),
+                      const Text('Arrived At:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text(
+                        DateFormat('hh:mm a').format(stoppage.arrivedAt),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.navyDark),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 14),
+                  Row(
+                    children: [
+                      const Icon(Icons.logout_rounded, size: 16, color: AppColors.textSecondary),
+                      const SizedBox(width: 8),
+                      const Text('Departed At:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text(
+                        DateFormat('hh:mm a').format(stoppage.departedAt),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.navyDark),
+                      ),
+                    ],
+                  ),
+                ] else if (stoppage.isEndStop) ...[
+                  Row(
+                    children: [
+                      const Icon(Icons.check_circle_outline_rounded, size: 16, color: Color(0xFFDC2626)),
+                      const SizedBox(width: 8),
+                      const Text('Arrival Time:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text(
+                        DateFormat('hh:mm a').format(stoppage.arrivedAt),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.navyDark),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 14),
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today_rounded, size: 16, color: AppColors.textSecondary),
+                      const SizedBox(width: 8),
+                      const Text('Arrival Date:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text(
+                        DateFormat('dd MMM yyyy').format(stoppage.arrivedAt),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ] else ...[
+                  Row(
+                    children: [
+                      const Icon(Icons.play_circle_outline_rounded, size: 16, color: AppColors.success),
+                      const SizedBox(width: 8),
+                      const Text('Start Time:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text(
+                        DateFormat('hh:mm a').format(stoppage.arrivedAt),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.navyDark),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 14),
+                  Row(
+                    children: [
+                      const Icon(Icons.calendar_today_rounded, size: 16, color: AppColors.textSecondary),
+                      const SizedBox(width: 8),
+                      const Text('Date:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text(
+                        DateFormat('dd MMM yyyy').format(stoppage.arrivedAt),
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                      ),
+                    ],
+                  ),
+                ],
                 const Divider(height: 14),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
