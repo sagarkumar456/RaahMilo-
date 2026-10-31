@@ -41,11 +41,11 @@ class TripPoint {
     DateTime ts;
     final atVal = map['at'] ?? map['timestamp'];
     if (atVal is Timestamp) {
-      ts = atVal.toDate();
+      ts = atVal.toDate().toLocal();
     } else if (atVal is String) {
-      ts = DateTime.tryParse(atVal) ?? DateTime.now();
+      ts = (DateTime.tryParse(atVal) ?? DateTime.now()).toLocal();
     } else if (atVal is int) {
-      ts = DateTime.fromMillisecondsSinceEpoch(atVal);
+      ts = DateTime.fromMillisecondsSinceEpoch(atVal).toLocal();
     } else {
       ts = DateTime.now();
     }
@@ -104,13 +104,13 @@ class TripModel {
   }
 
   String get formattedDate {
-    return DateFormat('dd MMM yyyy • hh:mm a').format(startedAt);
+    return DateFormat('dd MMM yyyy • hh:mm a').format(startedAt.toLocal());
   }
 
   String get formattedTimeRange {
-    final startStr = DateFormat('hh:mm a').format(startedAt);
-    final endStr = endedAt != null ? DateFormat('hh:mm a').format(endedAt!) : 'Live';
-    return '${DateFormat('dd MMM yyyy').format(startedAt)} • $startStr - $endStr';
+    final startStr = DateFormat('hh:mm a').format(startedAt.toLocal());
+    final endStr = endedAt != null ? DateFormat('hh:mm a').format(endedAt!.toLocal()) : 'Live';
+    return '${DateFormat('dd MMM yyyy').format(startedAt.toLocal())} • $startStr - $endStr';
   }
 
   double get avgSpeedKmh {
@@ -134,8 +134,8 @@ class TripModel {
     'title': title,
     'ownerId': ownerId,
     'viewerIds': viewerIds,
-    'startedAt': startedAt.toIso8601String(),
-    'endedAt': endedAt?.toIso8601String(),
+    'startedAt': startedAt.toLocal().toIso8601String(),
+    'endedAt': endedAt?.toLocal().toIso8601String(),
     'distanceMeters': distanceMeters,
     'active': isActive,
     'points': points.map((p) => p.toJson()).toList(),
@@ -150,10 +150,10 @@ class TripModel {
       ownerId: json['ownerId'] as String? ?? '',
       viewerIds: List<String>.from(json['viewerIds'] ?? []),
       startedAt: json['startedAt'] != null
-          ? DateTime.tryParse(json['startedAt'].toString()) ?? DateTime.now()
+          ? (DateTime.tryParse(json['startedAt'].toString())?.toLocal() ?? DateTime.now())
           : DateTime.now(),
       endedAt: json['endedAt'] != null
-          ? DateTime.tryParse(json['endedAt'].toString())
+          ? DateTime.tryParse(json['endedAt'].toString())?.toLocal()
           : null,
       distanceMeters: (json['distanceMeters'] as num?)?.toDouble() ?? 0.0,
       isActive: json['active'] as bool? ?? (json['isActive'] as bool? ?? false),
@@ -168,9 +168,9 @@ class TripModel {
     DateTime started;
     final sVal = data['startedAt'];
     if (sVal is Timestamp) {
-      started = sVal.toDate();
+      started = sVal.toDate().toLocal();
     } else if (sVal is String) {
-      started = DateTime.tryParse(sVal) ?? DateTime.now();
+      started = (DateTime.tryParse(sVal) ?? DateTime.now()).toLocal();
     } else {
       started = DateTime.now();
     }
@@ -178,9 +178,16 @@ class TripModel {
     DateTime? ended;
     final eVal = data['endedAt'];
     if (eVal is Timestamp) {
-      ended = eVal.toDate();
+      ended = eVal.toDate().toLocal();
     } else if (eVal is String) {
-      ended = DateTime.tryParse(eVal);
+      ended = DateTime.tryParse(eVal)?.toLocal();
+    }
+
+    List<TripPoint> finalPoints = List<TripPoint>.from(points);
+    if (finalPoints.isEmpty && data['points'] is List) {
+      finalPoints = (data['points'] as List)
+          .map((p) => TripPoint.fromMap(Map<String, dynamic>.from(p)))
+          .toList();
     }
 
     return TripModel(
@@ -192,7 +199,7 @@ class TripModel {
       endedAt: ended,
       distanceMeters: (data['distanceMeters'] as num?)?.toDouble() ?? 0.0,
       isActive: data['active'] as bool? ?? false,
-      points: points,
+      points: finalPoints,
       vehicleType: data['vehicleType'] as String? ?? 'car',
     );
   }

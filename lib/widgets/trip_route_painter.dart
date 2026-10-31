@@ -2,31 +2,126 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../core/app_colors.dart';
 import '../models/trip_model.dart';
+import '../models/vehicle_type.dart';
 
 class TripRouteThumbnail extends StatelessWidget {
   final List<TripPoint> points;
+  final VehicleType? vehicleType;
   final double size;
 
   const TripRouteThumbnail({
     super.key,
     required this.points,
+    this.vehicleType,
     this.size = 54,
   });
 
   @override
   Widget build(BuildContext context) {
+    final vType = vehicleType ?? VehicleType.car;
+    final themeColor = vType.color;
+    final lightColor = vType.lightColor;
+
+    if (points.length < 2) {
+      // Beautiful distinct vehicle avatar thumbnail instead of identical fake curves
+      return Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: lightColor,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: themeColor.withValues(alpha: 0.35),
+            width: 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: themeColor.withValues(alpha: 0.08),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Vehicle icon centered
+            Icon(
+              vType.icon,
+              size: size * 0.46,
+              color: themeColor,
+            ),
+            // Bottom vehicle badge label
+            Positioned(
+              bottom: 3,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                decoration: BoxDecoration(
+                  color: themeColor,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  vType.displayName,
+                  style: const TextStyle(
+                    fontSize: 7.5,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Has 2 or more points: draw actual recorded path
     return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: AppColors.tileBackground,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.border, width: 0.8),
+        color: lightColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: themeColor.withValues(alpha: 0.35),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: themeColor.withValues(alpha: 0.08),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: CustomPaint(
-          painter: _RouteThumbnailPainter(points),
+        borderRadius: BorderRadius.circular(13),
+        child: Stack(
+          children: [
+            CustomPaint(
+              size: Size(size, size),
+              painter: _RouteThumbnailPainter(points, routeColor: themeColor),
+            ),
+            // Top-right tiny vehicle icon overlay
+            Positioned(
+              top: 3,
+              right: 3,
+              child: Container(
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: themeColor.withValues(alpha: 0.4), width: 0.6),
+                ),
+                child: Icon(
+                  vType.icon,
+                  size: 9,
+                  color: themeColor,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -35,34 +130,13 @@ class TripRouteThumbnail extends StatelessWidget {
 
 class _RouteThumbnailPainter extends CustomPainter {
   final List<TripPoint> points;
+  final Color routeColor;
 
-  _RouteThumbnailPainter(this.points);
+  _RouteThumbnailPainter(this.points, {this.routeColor = AppColors.primary});
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bgPaint = Paint()..color = const Color(0xFFEFF4FA);
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
-
-    if (points.isEmpty) {
-      final p1 = Offset(size.width * 0.2, size.height * 0.7);
-      final p2 = Offset(size.width * 0.5, size.height * 0.3);
-      final p3 = Offset(size.width * 0.8, size.height * 0.6);
-
-      final path = Path()
-        ..moveTo(p1.dx, p1.dy)
-        ..quadraticBezierTo(p2.dx, p2.dy, p3.dx, p3.dy);
-
-      final linePaint = Paint()
-        ..color = AppColors.primary
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..strokeCap = StrokeCap.round;
-
-      canvas.drawPath(path, linePaint);
-      canvas.drawCircle(p1, 3.5, Paint()..color = AppColors.success);
-      canvas.drawCircle(p3, 3.5, Paint()..color = AppColors.danger);
-      return;
-    }
+    if (points.length < 2) return;
 
     double minLat = points.first.latitude;
     double maxLat = points.first.latitude;
@@ -96,59 +170,69 @@ class _RouteThumbnailPainter extends CustomPainter {
       }
     }
 
-    final linePaint = Paint()
-      ..color = AppColors.primary
+    // Outer glow/casing
+    final casingPaint = Paint()
+      ..color = routeColor.withValues(alpha: 0.25)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 3
+      ..strokeWidth = 5.0
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(path, casingPaint);
 
+    // Main route line
+    final linePaint = Paint()
+      ..color = routeColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.8
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
     canvas.drawPath(path, linePaint);
 
     // Direction arrow at midpoint of path
-    if (points.length >= 2) {
-      final midIdx = points.length ~/ 2;
-      final pFrom = points[midIdx > 0 ? midIdx - 1 : 0];
-      final pTo = points[midIdx];
-      final fx = pad + ((pFrom.longitude - minLng) / lngSpan) * drawW;
-      final fy = size.height - (pad + ((pFrom.latitude - minLat) / latSpan) * drawH);
-      final tx = pad + ((pTo.longitude - minLng) / lngSpan) * drawW;
-      final ty = size.height - (pad + ((pTo.latitude - minLat) / latSpan) * drawH);
+    final midIdx = points.length ~/ 2;
+    final pFrom = points[midIdx > 0 ? midIdx - 1 : 0];
+    final pTo = points[midIdx];
+    final fx = pad + ((pFrom.longitude - minLng) / lngSpan) * drawW;
+    final fy = size.height - (pad + ((pFrom.latitude - minLat) / latSpan) * drawH);
+    final tx = pad + ((pTo.longitude - minLng) / lngSpan) * drawW;
+    final ty = size.height - (pad + ((pTo.latitude - minLat) / latSpan) * drawH);
 
-      final angle = atan2(ty - fy, tx - fx);
-      if ((tx - fx).abs() > 1 || (ty - fy).abs() > 1) {
-        final arrowPaint = Paint()
-          ..color = Colors.white
-          ..style = PaintingStyle.fill;
-        final arrowPath = Path();
-        const arrowLen = 6.0;
-        arrowPath.moveTo(tx, ty);
-        arrowPath.lineTo(
-          tx - arrowLen * cos(angle - 0.5),
-          ty - arrowLen * sin(angle - 0.5),
-        );
-        arrowPath.lineTo(
-          tx - arrowLen * cos(angle + 0.5),
-          ty - arrowLen * sin(angle + 0.5),
-        );
-        arrowPath.close();
-        canvas.drawPath(arrowPath, arrowPaint);
-      }
+    final angle = atan2(ty - fy, tx - fx);
+    if ((tx - fx).abs() > 1 || (ty - fy).abs() > 1) {
+      final arrowPaint = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.fill;
+      final arrowPath = Path();
+      const arrowLen = 5.5;
+      arrowPath.moveTo(tx, ty);
+      arrowPath.lineTo(
+        tx - arrowLen * cos(angle - 0.5),
+        ty - arrowLen * sin(angle - 0.5),
+      );
+      arrowPath.lineTo(
+        tx - arrowLen * cos(angle + 0.5),
+        ty - arrowLen * sin(angle + 0.5),
+      );
+      arrowPath.close();
+      canvas.drawPath(arrowPath, arrowPaint);
     }
 
-    // Start point (Green)
+    // Start point (Green circle with white border)
     final first = points.first;
     final startX = pad + ((first.longitude - minLng) / lngSpan) * drawW;
     final startY = size.height - (pad + ((first.latitude - minLat) / latSpan) * drawH);
-    canvas.drawCircle(Offset(startX, startY), 3.5, Paint()..color = AppColors.success);
+    canvas.drawCircle(Offset(startX, startY), 4.0, Paint()..color = Colors.white);
+    canvas.drawCircle(Offset(startX, startY), 3.0, Paint()..color = AppColors.success);
 
-    // End point (Red)
+    // End point (Red/Crimson circle with white border)
     final last = points.last;
     final endX = pad + ((last.longitude - minLng) / lngSpan) * drawW;
     final endY = size.height - (pad + ((last.latitude - minLat) / latSpan) * drawH);
-    canvas.drawCircle(Offset(endX, endY), 3.5, Paint()..color = AppColors.danger);
+    canvas.drawCircle(Offset(endX, endY), 4.0, Paint()..color = Colors.white);
+    canvas.drawCircle(Offset(endX, endY), 3.0, Paint()..color = AppColors.danger);
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _RouteThumbnailPainter oldDelegate) =>
+      oldDelegate.points != points || oldDelegate.routeColor != routeColor;
 }

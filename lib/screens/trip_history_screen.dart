@@ -34,22 +34,27 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
       list = list.where((t) => t.vehicleTypeEnum == _selectedVehicle).toList();
     }
     if (_specificDate != null) {
-      return list.where((t) =>
-        t.startedAt.year == _specificDate!.year &&
-        t.startedAt.month == _specificDate!.month &&
-        t.startedAt.day == _specificDate!.day
-      ).toList();
+      return list.where((t) {
+        final s = t.startedAt.toLocal();
+        return s.year == _specificDate!.year &&
+            s.month == _specificDate!.month &&
+            s.day == _specificDate!.day;
+      }).toList();
     }
     if (_selectedFilter == 'All') return list;
     final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final weekStart = todayStart.subtract(Duration(days: now.weekday - 1));
+    final monthStart = DateTime(now.year, now.month, 1);
+
     return list.where((t) {
-      final diff = now.difference(t.startedAt);
+      final s = t.startedAt.toLocal();
       if (_selectedFilter == 'Today') {
-        return diff.inHours < 24 && t.startedAt.day == now.day;
+        return s.year == now.year && s.month == now.month && s.day == now.day;
       } else if (_selectedFilter == 'This Week') {
-        return diff.inDays <= 7;
+        return s.isAfter(weekStart.subtract(const Duration(seconds: 1)));
       } else if (_selectedFilter == 'This Month') {
-        return diff.inDays <= 30;
+        return s.isAfter(monthStart.subtract(const Duration(seconds: 1)));
       }
       return true;
     }).toList();
@@ -222,6 +227,9 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
                           separatorBuilder: (_, __) => const SizedBox(height: 12),
                           itemBuilder: (context, index) {
                             final trip = trips[index];
+                            if (trip.points.isEmpty && !trip.id.startsWith('local_')) {
+                              trackingService.ensureTripPointsLoaded(trip);
+                            }
                             return _tripCard(trip);
                           },
                         ),
@@ -274,10 +282,18 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
         );
       },
       child: InkWell(
-        onTap: () {
+        onTap: () async {
+          if (trip.points.isEmpty && !trip.id.startsWith('local_')) {
+            await trackingService.ensureTripPointsLoaded(trip);
+          }
+          if (!mounted) return;
+          final updatedTrip = trackingService.historyTrips.firstWhere(
+            (t) => t.id == trip.id,
+            orElse: () => trip,
+          );
           Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => TripDetailsScreen(trip: trip)),
+            MaterialPageRoute(builder: (_) => TripDetailsScreen(trip: updatedTrip)),
           );
         },
         borderRadius: BorderRadius.circular(16),
@@ -297,8 +313,12 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
           ),
           child: Row(
             children: [
-              // Route preview thumbnail
-              TripRouteThumbnail(points: trip.points, size: 54),
+              // Route preview thumbnail with distinct vehicle styling
+              TripRouteThumbnail(
+                points: trip.points,
+                vehicleType: trip.vehicleTypeEnum,
+                size: 54,
+              ),
               const SizedBox(width: 14),
               // Trip metadata
               Expanded(

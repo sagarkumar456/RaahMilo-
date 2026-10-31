@@ -45,13 +45,15 @@ class StoppageModel {
 
   String get formattedTime {
     final format = DateFormat('hh:mm a');
+    final arrLocal = arrivedAt.toLocal();
+    final depLocal = departedAt.toLocal();
     if (isStart) {
-      return 'Started at ${format.format(arrivedAt)}';
+      return 'Started at ${format.format(arrLocal)}';
     }
     if (isEndStop) {
-      return 'Arrived at ${format.format(arrivedAt)}';
+      return 'Arrived at ${format.format(arrLocal)}';
     }
-    return '${format.format(arrivedAt)} - ${format.format(departedAt)}';
+    return '${format.format(arrLocal)} - ${format.format(depLocal)}';
   }
 
   String get title {
@@ -64,8 +66,8 @@ class StoppageModel {
     'stopNumber': stopNumber,
     'latitude': latitude,
     'longitude': longitude,
-    'arrivedAt': arrivedAt.toIso8601String(),
-    'departedAt': departedAt.toIso8601String(),
+    'arrivedAt': arrivedAt.toLocal().toIso8601String(),
+    'departedAt': departedAt.toLocal().toIso8601String(),
     'durationSeconds': duration.inSeconds,
     'address': address,
     'isEndStop': isEndStop,
@@ -76,8 +78,8 @@ class StoppageModel {
     stopNumber: json['stopNumber'] as int? ?? 1,
     latitude: (json['latitude'] as num).toDouble(),
     longitude: (json['longitude'] as num).toDouble(),
-    arrivedAt: DateTime.parse(json['arrivedAt'] as String),
-    departedAt: DateTime.parse(json['departedAt'] as String),
+    arrivedAt: DateTime.parse(json['arrivedAt'] as String).toLocal(),
+    departedAt: DateTime.parse(json['departedAt'] as String).toLocal(),
     duration: Duration(seconds: json['durationSeconds'] as int? ?? 0),
     address: json['address'] as String?,
     isEndStop: json['isEndStop'] as bool? ?? false,

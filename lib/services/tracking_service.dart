@@ -110,9 +110,10 @@ class TrackingService extends ChangeNotifier {
   double getDistanceForDate(DateTime date, {VehicleType? vehicleFilter}) {
     double totalMeters = 0.0;
     for (final trip in _historyTrips) {
-      if (trip.startedAt.year == date.year &&
-          trip.startedAt.month == date.month &&
-          trip.startedAt.day == date.day) {
+      final tripDate = trip.startedAt.toLocal();
+      if (tripDate.year == date.year &&
+          tripDate.month == date.month &&
+          tripDate.day == date.day) {
         if (vehicleFilter == null || trip.vehicleTypeEnum == vehicleFilter) {
           totalMeters += trip.distanceMeters;
         }
@@ -132,15 +133,41 @@ class TrackingService extends ChangeNotifier {
 
   List<TripModel> getTripsForDate(DateTime date, {VehicleType? vehicleFilter}) {
     final list = _historyTrips.where((trip) {
-      final matchesDate = trip.startedAt.year == date.year &&
-          trip.startedAt.month == date.month &&
-          trip.startedAt.day == date.day;
+      final tripDate = trip.startedAt.toLocal();
+      final matchesDate = tripDate.year == date.year &&
+          tripDate.month == date.month &&
+          tripDate.day == date.day;
       if (!matchesDate) return false;
       if (vehicleFilter != null && trip.vehicleTypeEnum != vehicleFilter) {
         return false;
       }
       return true;
     }).toList();
+
+    // If viewing today and tracking is currently active with points, include live active trip
+    final now = DateTime.now();
+    if (_active &&
+        date.year == now.year &&
+        date.month == now.month &&
+        date.day == now.day &&
+        _tripPoints.length >= 2) {
+      if (vehicleFilter == null || _currentVehicle == vehicleFilter) {
+        final activeTrip = TripModel(
+          id: _tripId ?? 'live_active',
+          title: '${_currentVehicle.displayName} Trip • In Progress (Live)',
+          ownerId: authService.uid,
+          viewerIds: [],
+          startedAt: (_began ?? now).toLocal(),
+          endedAt: null,
+          distanceMeters: _meters,
+          isActive: true,
+          points: List<TripPoint>.from(_tripPoints),
+          vehicleType: _currentVehicle.name,
+        );
+        list.insert(0, activeTrip);
+      }
+    }
+
     list.sort((a, b) => b.startedAt.compareTo(a.startedAt));
     return list;
   }
@@ -833,6 +860,8 @@ class TrackingService extends ChangeNotifier {
           'active': false,
           'endedAt': FieldValue.serverTimestamp(),
           'distanceMeters': totalDistance,
+          'points': finalPoints.map((p) => p.toJson()).toList(),
+          'vehicleType': _currentVehicle.name,
         });
       } catch (_) {}
     }
@@ -913,11 +942,24 @@ class TrackingService extends ChangeNotifier {
       final docs = snapshot.docs.where((d) => d.data()['active'] != true).toList();
 
       for (final doc in docs) {
+        final data = doc.data();
         if (!existingIds.contains(doc.id)) {
-          final firestoreTrip = TripModel.fromFirestore(doc.id, doc.data());
+          final firestoreTrip = TripModel.fromFirestore(doc.id, data);
           _historyTrips.add(firestoreTrip);
           existingIds.add(doc.id);
           changed = true;
+        } else {
+          // If already in memory but points were empty, backfill if data has points
+          final idx = _historyTrips.indexWhere((t) => t.id == doc.id);
+          if (idx != -1 && _historyTrips[idx].points.isEmpty && data['points'] is List) {
+            final pts = (data['points'] as List)
+                .map((p) => TripPoint.fromMap(Map<String, dynamic>.from(p)))
+                .toList();
+            if (pts.isNotEmpty) {
+              _historyTrips[idx] = _historyTrips[idx].copyWith(points: pts);
+              changed = true;
+            }
+          }
         }
       }
 
@@ -928,6 +970,68 @@ class TrackingService extends ChangeNotifier {
       }
     } catch (e) {
       debugPrint('Firestore history sync: $e');
+    }
+  }
+
+  /// Ensures that route points are loaded for a trip, querying Firestore if points are missing locally.
+  Future<List<TripPoint>> ensureTripPointsLoaded(TripModel trip) async {
+    if (trip.points.isNotEmpty) return trip.points;
+    if (trip.id.startsWith('local_')) return const [];
+
+    try {
+      final docRef = FirebaseFirestore.instance.collection('trips').doc(trip.id);
+      final docSnap = await docRef.get();
+      if (docSnap.exists) {
+        final data = docSnap.data();
+        if (data != null && data['points'] is List && (data['points'] as List).isNotEmpty) {
+          final pts = (data['points'] as List)
+              .map((p) => TripPoint.fromMap(Map<String, dynamic>.from(p)))
+              .toList();
+          _updateTripPointsInMemory(trip.id, pts);
+          return pts;
+        }
+      }
+
+      // Query points subcollection
+      final snap = await docRef.collection('points').orderBy('at').limit(3000).get();
+      if (snap.docs.isNotEmpty) {
+        final pts = snap.docs.map((d) => TripPoint.fromMap(d.data())).toList();
+        if (pts.isNotEmpty) {
+          _updateTripPointsInMemory(trip.id, pts);
+          // Backfill into document for immediate future access
+          docRef.update({
+            'points': pts.map((p) => p.toJson()).toList(),
+          }).catchError((_) {});
+          return pts;
+        }
+      }
+    } catch (e) {
+      debugPrint('ensureTripPointsLoaded error for ${trip.id}: $e');
+    }
+    return const [];
+  }
+
+  void _updateTripPointsInMemory(String tripId, List<TripPoint> pts) {
+    final idx = _historyTrips.indexWhere((t) => t.id == tripId);
+    if (idx != -1) {
+      _historyTrips[idx] = _historyTrips[idx].copyWith(points: pts);
+      _saveLocalHistory();
+      notifyListeners();
+    }
+  }
+
+  /// Ensures that route points are fully loaded for all trips on [date]
+  Future<void> ensurePointsLoadedForDate(DateTime date) async {
+    final trips = getTripsForDate(date);
+    bool anyLoaded = false;
+    for (final trip in trips) {
+      if (trip.points.isEmpty && !trip.id.startsWith('local_')) {
+        final pts = await ensureTripPointsLoaded(trip);
+        if (pts.isNotEmpty) anyLoaded = true;
+      }
+    }
+    if (anyLoaded) {
+      notifyListeners();
     }
   }
 

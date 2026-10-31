@@ -39,7 +39,7 @@ enum VehicleType {
       case VehicleType.car:
         return const Color(0xFF10B981); // Emerald Green
       case VehicleType.human:
-        return const Color(0xFF10B981); // Emerald Green
+        return const Color(0xFF0284C7); // Ocean Blue
       case VehicleType.scooty:
         return const Color(0xFFF59E0B); // Amber / Orange
       case VehicleType.bike:
@@ -52,7 +52,7 @@ enum VehicleType {
       case VehicleType.car:
         return const Color(0xFFECFDF5);
       case VehicleType.human:
-        return const Color(0xFFECFDF5);
+        return const Color(0xFFF0F9FF);
       case VehicleType.scooty:
         return const Color(0xFFFFFBEB);
       case VehicleType.bike:

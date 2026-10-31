@@ -292,9 +292,9 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
                     ),
                     Text(
                       stoppage.isStart
-                          ? 'Trip Started at ${DateFormat('hh:mm a').format(stoppage.arrivedAt)}'
+                          ? 'Trip Started at ${DateFormat('hh:mm a').format(stoppage.arrivedAt.toLocal())}'
                           : stoppage.isEndStop
-                              ? 'Arrived at ${DateFormat('hh:mm a').format(stoppage.arrivedAt)}'
+                              ? 'Arrived at ${DateFormat('hh:mm a').format(stoppage.arrivedAt.toLocal())}'
                               : 'Halted for ${stoppage.formattedDuration}',
                       style: TextStyle(
                         fontSize: 12.5,
@@ -352,7 +352,7 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
                       const Text('Arrived At:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       const Spacer(),
                       Text(
-                        DateFormat('hh:mm a').format(stoppage.arrivedAt),
+                        DateFormat('hh:mm a').format(stoppage.arrivedAt.toLocal()),
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.navyDark),
                       ),
                     ],
@@ -365,7 +365,7 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
                       const Text('Departed At:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       const Spacer(),
                       Text(
-                        DateFormat('hh:mm a').format(stoppage.departedAt),
+                        DateFormat('hh:mm a').format(stoppage.departedAt.toLocal()),
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.navyDark),
                       ),
                     ],
@@ -378,7 +378,7 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
                       const Text('Arrival Time:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       const Spacer(),
                       Text(
-                        DateFormat('hh:mm a').format(stoppage.arrivedAt),
+                        DateFormat('hh:mm a').format(stoppage.arrivedAt.toLocal()),
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.navyDark),
                       ),
                     ],
@@ -391,7 +391,7 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
                       const Text('Arrival Date:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       const Spacer(),
                       Text(
-                        DateFormat('dd MMM yyyy').format(stoppage.arrivedAt),
+                        DateFormat('dd MMM yyyy').format(stoppage.arrivedAt.toLocal()),
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
                       ),
                     ],
@@ -404,7 +404,7 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
                       const Text('Start Time:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       const Spacer(),
                       Text(
-                        DateFormat('hh:mm a').format(stoppage.arrivedAt),
+                        DateFormat('hh:mm a').format(stoppage.arrivedAt.toLocal()),
                         style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.navyDark),
                       ),
                     ],
@@ -417,7 +417,7 @@ void showStoppageDetailsSheet(BuildContext context, StoppageModel stoppage) {
                       const Text('Date:', style: TextStyle(fontSize: 12, color: AppColors.textSecondary)),
                       const Spacer(),
                       Text(
-                        DateFormat('dd MMM yyyy').format(stoppage.arrivedAt),
+                        DateFormat('dd MMM yyyy').format(stoppage.arrivedAt.toLocal()),
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
                       ),
                     ],

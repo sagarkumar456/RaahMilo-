@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
@@ -100,23 +99,15 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   }
 
   Future<void> _loadTripPointsFromFirestore() async {
-    if (widget.trip.points.isNotEmpty || widget.trip.id.startsWith('local_')) return;
+    if (_points.isNotEmpty || widget.trip.id.startsWith('local_')) return;
     try {
-      final snap = await FirebaseFirestore.instance
-          .collection('trips')
-          .doc(widget.trip.id)
-          .collection('points')
-          .orderBy('at')
-          .get();
-      if (snap.docs.isNotEmpty && mounted) {
-        final pts = snap.docs.map((d) => TripPoint.fromMap(d.data())).toList();
+      final pts = await trackingService.ensureTripPointsLoaded(widget.trip);
+      if (pts.isNotEmpty && mounted) {
         setState(() {
           _points = pts;
         });
-        if (pts.isNotEmpty) {
-          _fitTripBounds();
-          _snapTripRoute();
-        }
+        _fitTripBounds();
+        _snapTripRoute();
       }
     } catch (_) {}
   }
@@ -345,14 +336,14 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                       height: 52,
                       alignment: Alignment.topCenter,
                       child: StartOriginMarkerWidget(
-                        startedAt: _points.first.timestamp,
+                        startedAt: _points.first.timestamp.toLocal(),
                         onTap: () {
                           final startStop = StoppageModel(
                             stopNumber: 0,
                             latitude: _points.first.latitude,
                             longitude: _points.first.longitude,
-                            arrivedAt: _points.first.timestamp,
-                            departedAt: _points.first.timestamp,
+                            arrivedAt: _points.first.timestamp.toLocal(),
+                            departedAt: _points.first.timestamp.toLocal(),
                             duration: Duration.zero,
                             isStart: true,
                           );

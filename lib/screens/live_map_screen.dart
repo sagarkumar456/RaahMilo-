@@ -167,6 +167,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     await trackingService.loadHistory();
     _selectedDate = DateTime.now();
     _selectedSegmentId = null;
+    await trackingService.ensurePointsLoadedForDate(_selectedDate);
     _snapTripsForCurrentDate();
 
     final pos = await trackingService.initCurrentLocation(forceRefresh: true) ?? trackingService.current;
@@ -378,11 +379,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     setState(() => _isSatellite = !_isSatellite);
   }
 
-  void _onDateSelected(DateTime date) {
+  void _onDateSelected(DateTime date) async {
     setState(() {
       _selectedDate = date;
       _selectedSegmentId = null; // Reset to show all paths of the day
+      _isAutoFollowEnabled = false; // Disable auto-follow to keep focus on historical route
     });
+
+    // Ensure all points for the selected date are loaded
+    await trackingService.ensurePointsLoadedForDate(date);
+    if (!mounted) return;
+
+    _snapTripsForCurrentDate();
 
     final dayTrips = trackingService.getTripsForDate(
       date,
@@ -391,15 +399,24 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
 
     final pts = <ll.LatLng>[];
     for (final t in dayTrips) {
-      for (final p in t.points) {
-        pts.add(ll.LatLng(p.latitude, p.longitude));
+      final snapped = _snappedTripRoutes[t.id];
+      if (snapped != null && snapped.isNotEmpty) {
+        pts.addAll(snapped);
+      } else {
+        for (final p in t.points) {
+          pts.add(ll.LatLng(p.latitude, p.longitude));
+        }
       }
     }
 
     if (pts.isNotEmpty) {
       _fitRouteBounds(pts);
     } else {
-      _recenter();
+      final now = DateTime.now();
+      final isToday = date.year == now.year && date.month == now.month && date.day == now.day;
+      if (isToday) {
+        _recenter();
+      }
     }
   }
 
@@ -412,7 +429,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     _recenter();
   }
 
-  void _onVehicleSelected(VehicleType? type) {
+  void _onVehicleSelected(VehicleType? type) async {
     if (type != null) {
       trackingService.setVehicleType(type);
     }
@@ -421,14 +438,23 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
       _selectedSegmentId = null;
     });
 
+    await trackingService.ensurePointsLoadedForDate(_selectedDate);
+    if (!mounted) return;
+    _snapTripsForCurrentDate();
+
     final dayTrips = trackingService.getTripsForDate(
       _selectedDate,
       vehicleFilter: type,
     );
     final pts = <ll.LatLng>[];
     for (final t in dayTrips) {
-      for (final p in t.points) {
-        pts.add(ll.LatLng(p.latitude, p.longitude));
+      final snapped = _snappedTripRoutes[t.id];
+      if (snapped != null && snapped.isNotEmpty) {
+        pts.addAll(snapped);
+      } else {
+        for (final p in t.points) {
+          pts.add(ll.LatLng(p.latitude, p.longitude));
+        }
       }
     }
     if (pts.isNotEmpty) {
@@ -696,6 +722,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
 
           if (pts.isNotEmpty) {
             // Start Origin Marker with direction label
+            final segStart = seg.startedAt.toLocal();
             markers.add(
               Marker(
                 point: pts.first,
@@ -703,7 +730,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                 height: 62,
                 alignment: Alignment.topCenter,
                 child: StartOriginMarkerWidget(
-                  startedAt: seg.startedAt,
+                  startedAt: segStart,
                   color: seg.primaryColor,
                   label: seg.isReturn ? 'RETURN START' : 'OUTWARD START',
                   onTap: () {
@@ -711,8 +738,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                       stopNumber: 0,
                       latitude: pts.first.latitude,
                       longitude: pts.first.longitude,
-                      arrivedAt: seg.startedAt,
-                      departedAt: seg.startedAt,
+                      arrivedAt: segStart,
+                      departedAt: segStart,
                       duration: Duration.zero,
                       isStart: true,
                     );
@@ -740,8 +767,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             }
 
             // End Marker with destination badge
-            final endArrivalTime = seg.endedAt ?? DateTime.now();
-            final segDuration = (seg.endedAt ?? DateTime.now()).difference(seg.startedAt);
+            final endArrivalTime = (seg.endedAt ?? DateTime.now()).toLocal();
+            final segDuration = endArrivalTime.difference(segStart);
             final endStop = StoppageModel(
               stopNumber: 1,
               latitude: pts.last.latitude,
@@ -814,8 +841,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
 
           // Live Start Marker
           final liveTripPoints = trackingService.tripPoints;
-          final tripStartTime = trackingService.began ??
-              (liveTripPoints.isNotEmpty ? liveTripPoints.first.timestamp : DateTime.now());
+          final tripStartTime = (trackingService.began ??
+              (liveTripPoints.isNotEmpty ? liveTripPoints.first.timestamp : DateTime.now())).toLocal();
 
           markers.add(
             Marker(
