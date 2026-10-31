@@ -3,52 +3,53 @@ import 'package:flutter_map/flutter_map.dart';
 /// Centralized map tile server configurations for RaahMilo.
 /// 100% Free, zero API key required, zero watermarks.
 class AppMapTiles {
-  /// CartoDB Voyager: Ultra-fast CDN edge-cached tiles (100% free, zero watermarks, sub-20ms response)
+  /// OpenStreetMap standard tile server (clean, free, zero watermarks, zero API key required)
   static const String streetUrl =
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
-
-  /// OpenStreetMap standard fallback
-  static const String streetFallbackUrl =
       'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
-  /// ArcGIS World Imagery for satellite view
+  /// ArcGIS World Imagery for satellite view (free, zero API key required)
   static const String satelliteUrl =
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
 
-  /// User Agent matching the Android applicationId
-  static const String userAgentPackage = 'com.trackmyphone.gps';
+  /// HTTP Headers for OpenStreetMap Varnish edge cache routing
+  static const Map<String, String> tileHeaders = {
+    'User-Agent': 'RaahMiloGPS/1.0 (Android; com.trackmyphone.gps)',
+  };
 
-  /// Factory helper that produces a clean TileLayer with zero watermarks & zero API keys
+  /// Factory helper that produces a clean TileLayer with zero watermarks & zero API keys.
+  /// Note: fallbackUrl is omitted intentionally so Flutter's MapNetworkImageProvider
+  /// can fully utilize high-speed RAM image caching for instantaneous panning.
   static TileLayer buildTileLayer({bool isSatellite = false}) {
     if (isSatellite) {
       return TileLayer(
         urlTemplate: satelliteUrl,
-        fallbackUrl: streetFallbackUrl,
-        userAgentPackageName: userAgentPackage,
-        tileProvider: NetworkTileProvider(silenceExceptions: true),
+        tileProvider: NetworkTileProvider(
+          headers: tileHeaders,
+          silenceExceptions: true,
+        ),
         maxZoom: 19.0,
         maxNativeZoom: 19,
         minZoom: 3.0,
-        keepBuffer: 8,
+        keepBuffer: 6,
         panBuffer: 2,
         evictErrorTileStrategy: EvictErrorTileStrategy.dispose,
-        tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 50)),
+        tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 60)),
         tileUpdateTransformer: TileUpdateTransformers.ignoreTapEvents,
       );
     }
     return TileLayer(
       urlTemplate: streetUrl,
-      fallbackUrl: streetFallbackUrl,
-      subdomains: const ['a', 'b', 'c', 'd'],
-      userAgentPackageName: userAgentPackage,
-      tileProvider: NetworkTileProvider(silenceExceptions: true),
+      tileProvider: NetworkTileProvider(
+        headers: tileHeaders,
+        silenceExceptions: true,
+      ),
       maxZoom: 19.0,
       maxNativeZoom: 19,
       minZoom: 3.0,
-      keepBuffer: 8,
+      keepBuffer: 6,
       panBuffer: 2,
       evictErrorTileStrategy: EvictErrorTileStrategy.dispose,
-      tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 50)),
+      tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 60)),
       tileUpdateTransformer: TileUpdateTransformers.ignoreTapEvents,
     );
   }
