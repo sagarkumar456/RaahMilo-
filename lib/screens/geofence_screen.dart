@@ -3,10 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
 import '../core/map_tiles.dart';
-import '../models/app_notification.dart';
 import '../models/geofence_model.dart';
 import '../services/geofence_service.dart';
-import '../services/notification_service.dart';
 import '../services/tracking_service.dart';
 
 class GeofenceScreen extends StatefulWidget {
@@ -112,47 +110,183 @@ class _GeofenceScreenState extends State<GeofenceScreen> with SingleTickerProvid
   }
 
   void _testGeofenceAlert(GeofenceModel geofence) {
-    final isInside = GeofenceService().isInsideGeofence(geofence.id);
-    final alertTitle = isInside ? 'Arrived at ${geofence.name}' : 'Left ${geofence.name}';
-    final alertSubtitle = isInside
-        ? 'Your device entered ${geofence.name} safe zone (Test Alert)'
-        : 'Your device exited ${geofence.name} safe zone (Test Alert)';
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final isInside = GeofenceService().isInsideGeofence(geofence.id);
+          final dist = GeofenceService().distanceToGeofence(geofence.id);
+          final currentPos = trackingService.current;
 
-    NotificationService().addNotification(
-      title: alertTitle,
-      subtitle: alertSubtitle,
-      type: isInside ? NotificationType.arrivedZone : NotificationType.leftZone,
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isInside ? Icons.login_rounded : Icons.logout_rounded,
+          return Container(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+            decoration: const BoxDecoration(
               color: Colors.white,
-              size: 20,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '🔔 $alertTitle',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
-                  Text(alertSubtitle, style: const TextStyle(fontSize: 11.5)),
-                ],
-              ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.radar_rounded, color: AppColors.primary, size: 22),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Test Safe Zone • ${geofence.name}',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.navyDark),
+                          ),
+                          Text(
+                            'Radius: ${geofence.radiusMeters.toInt()}m • Entry & Exit Alert Simulation',
+                            style: const TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                // Current live status card
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isInside
+                        ? AppColors.success.withValues(alpha: 0.08)
+                        : const Color(0xFFF59E0B).withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isInside
+                          ? AppColors.success.withValues(alpha: 0.3)
+                          : const Color(0xFFF59E0B).withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isInside ? Icons.shield_rounded : Icons.radar_rounded,
+                        color: isInside ? AppColors.success : const Color(0xFFF59E0B),
+                        size: 22,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isInside ? 'STATUS: INSIDE SAFE ZONE' : 'STATUS: OUTSIDE SAFE ZONE',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: isInside ? AppColors.success : const Color(0xFFD97706),
+                              ),
+                            ),
+                            if (dist != null)
+                              Text(
+                                '${dist.toInt()}m from safe zone center',
+                                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  'Choose a test action to trigger alerts without physically walking outside:',
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 12),
+                // 1. Simulate Exit Button
+                ElevatedButton.icon(
+                  onPressed: () {
+                    GeofenceService().simulateExit(geofence.id);
+                    setSheetState(() {});
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.logout_rounded, size: 18),
+                  label: const Text('Simulate Exit (Bahar Jana) • Test Exit Alert'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF59E0B),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // 2. Simulate Entry Button
+                ElevatedButton.icon(
+                  onPressed: () {
+                    GeofenceService().simulateEntry(geofence.id);
+                    setSheetState(() {});
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.login_rounded, size: 18),
+                  label: const Text('Simulate Entry (Wapas Aana) • Test Entry Alert'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.success,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                // 3. Reset to Live GPS
+                if (currentPos != null)
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      GeofenceService().resetToRealPosition(currentPos.latitude, currentPos.longitude);
+                      setSheetState(() {});
+                      setState(() {});
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Reset to phone\'s actual GPS location.'),
+                          duration: Duration(seconds: 2),
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.my_location_rounded, size: 16),
+                    label: const Text('Reset to Actual Phone GPS Location'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.navyDark,
+                      side: const BorderSide(color: AppColors.border),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
-        backgroundColor: isInside ? AppColors.success : const Color(0xFFF59E0B),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 4),
+          );
+        },
       ),
     );
   }

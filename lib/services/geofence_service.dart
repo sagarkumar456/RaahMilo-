@@ -176,6 +176,33 @@ class GeofenceService extends ChangeNotifier {
     }
   }
 
+  /// Simulates device moving outside the specified geofence boundary.
+  /// Sets prior state as inside to ensure an authentic exit transition and alert.
+  void simulateExit(String geofenceId) {
+    final idx = _geofences.indexWhere((g) => g.id == geofenceId);
+    if (idx == -1) return;
+    final g = _geofences[idx];
+    _insideStates[geofenceId] = true;
+    final offsetMeters = g.radiusMeters + 250.0;
+    final dLat = offsetMeters / 111320.0;
+    checkLocationLatLng(g.latitude + dLat, g.longitude);
+  }
+
+  /// Simulates device moving inside the specified geofence boundary (to its center).
+  /// Sets prior state as outside to ensure an authentic entry transition and alert.
+  void simulateEntry(String geofenceId) {
+    final idx = _geofences.indexWhere((g) => g.id == geofenceId);
+    if (idx == -1) return;
+    final g = _geofences[idx];
+    _insideStates[geofenceId] = false;
+    checkLocationLatLng(g.latitude, g.longitude);
+  }
+
+  /// Re-evaluates geofences with the device's real coordinates.
+  void resetToRealPosition(double lat, double lng) {
+    checkLocationLatLng(lat, lng);
+  }
+
   void checkLocation(Position position) {
     checkLocationLatLng(position.latitude, position.longitude);
   }
