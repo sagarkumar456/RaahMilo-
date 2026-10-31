@@ -3,13 +3,13 @@ import 'package:flutter_map/flutter_map.dart';
 /// Centralized map tile server configurations for RaahMilo.
 /// 100% Free, zero API key required, zero watermarks.
 class AppMapTiles {
-  /// OpenStreetMap: Free open-source map with zero API key and zero watermarks
+  /// CartoDB Voyager: Ultra-fast CDN edge-cached tiles (100% free, zero watermarks, sub-20ms response)
   static const String streetUrl =
-      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png';
 
-  /// Esri World Street Map: Clean fallback layer, zero API key required
+  /// OpenStreetMap standard fallback
   static const String streetFallbackUrl =
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
   /// ArcGIS World Imagery for satellite view
   static const String satelliteUrl =
@@ -29,25 +29,26 @@ class AppMapTiles {
         maxZoom: 19.0,
         maxNativeZoom: 19,
         minZoom: 3.0,
-        keepBuffer: 4,
-        panBuffer: 1,
+        keepBuffer: 8,
+        panBuffer: 2,
         evictErrorTileStrategy: EvictErrorTileStrategy.dispose,
-        tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 60)),
+        tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 50)),
         tileUpdateTransformer: TileUpdateTransformers.ignoreTapEvents,
       );
     }
     return TileLayer(
       urlTemplate: streetUrl,
       fallbackUrl: streetFallbackUrl,
+      subdomains: const ['a', 'b', 'c', 'd'],
       userAgentPackageName: userAgentPackage,
       tileProvider: NetworkTileProvider(silenceExceptions: true),
       maxZoom: 19.0,
       maxNativeZoom: 19,
       minZoom: 3.0,
-      keepBuffer: 4,
-      panBuffer: 1,
+      keepBuffer: 8,
+      panBuffer: 2,
       evictErrorTileStrategy: EvictErrorTileStrategy.dispose,
-      tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 60)),
+      tileDisplay: const TileDisplay.fadeIn(duration: Duration(milliseconds: 50)),
       tileUpdateTransformer: TileUpdateTransformers.ignoreTapEvents,
     );
   }
