@@ -192,6 +192,7 @@ class _VehicleMarkerWidgetState extends State<VehicleMarkerWidget>
                         vehicleType: widget.vehicleType,
                         color: color,
                         isMoving: widget.isMoving,
+                        walkPhase: pulse,
                       ),
                     ),
                   ],
@@ -339,11 +340,15 @@ class _AsphaltShadowPainter extends CustomPainter {
         break;
 
       case VehicleType.human:
-        canvas.drawCircle(
-          Offset(cx, cy + 1.0),
-          size.width * 0.24,
+        // Ground contact shadow under the walking child & sneakers
+        canvas.drawOval(
+          Rect.fromCenter(
+            center: Offset(cx, cy + size.height * 0.08),
+            width: size.width * 0.46,
+            height: size.height * 0.40,
+          ),
           Paint()
-            ..color = Colors.black.withValues(alpha: 0.35)
+            ..color = Colors.black.withValues(alpha: 0.32)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0),
         );
         break;
@@ -469,11 +474,13 @@ class _TopDownVehiclePainter extends CustomPainter {
   final VehicleType vehicleType;
   final Color color;
   final bool isMoving;
+  final double walkPhase;
 
   _TopDownVehiclePainter({
     required this.vehicleType,
     required this.color,
     required this.isMoving,
+    this.walkPhase = 0.0,
   });
 
   @override
@@ -489,7 +496,7 @@ class _TopDownVehiclePainter extends CustomPainter {
         _drawScooty(canvas, size, color, isMoving);
         break;
       case VehicleType.human:
-        _drawHuman(canvas, size, color, isMoving);
+        _drawHuman(canvas, size, color, isMoving, walkPhase);
         break;
     }
   }
@@ -795,41 +802,311 @@ class _TopDownVehiclePainter extends CustomPainter {
     canvas.drawOval(Rect.fromCenter(center: Offset(cx, cy + h * 0.36), width: w * 0.18, height: h * 0.05), Paint()..color = const Color(0xFFEF4444));
   }
 
-  void _drawHuman(Canvas canvas, Size size, Color color, bool isMoving) {
+  void _drawHuman(Canvas canvas, Size size, Color color, bool isMoving, double walkPhase) {
     final cx = size.width / 2;
     final cy = size.height / 2;
-    final r = size.width * 0.34;
+    final w = size.width;
+    final h = size.height;
 
-    // 1. Navigation disc base
-    canvas.drawCircle(
-      Offset(cx, cy),
-      r,
+    // Smooth pendulum swing (-1.0 to +1.0) for natural walking strides
+    final stride = isMoving ? sin((walkPhase - 0.5) * pi) : 0.0;
+
+    // 1. Walking Dust / Step Puffs behind trailing foot (when moving)
+    if (isMoving && stride.abs() > 0.3) {
+      final trailingFootX = stride > 0 ? (cx - w * 0.14) : (cx + w * 0.14);
+      final puffAlpha = (0.28 * stride.abs()).clamp(0.0, 0.28);
+      canvas.drawCircle(
+        Offset(trailingFootX, cy + h * 0.30),
+        2.5 + stride.abs() * 1.5,
+        Paint()..color = Colors.white.withValues(alpha: puffAlpha),
+      );
+    }
+
+    // 2. Cute Sneakers (Feet) - oscillate with stride
+    // Left Foot (stride forward = -Y, backward = +Y)
+    final lFootY = cy + h * 0.18 - stride * (h * 0.13);
+    final lFootCenter = Offset(cx - w * 0.14, lFootY);
+    _drawSneaker(canvas, lFootCenter, w * 0.15, h * 0.21);
+
+    // Right Foot (opposite swing)
+    final rFootY = cy + h * 0.18 + stride * (h * 0.13);
+    final rFootCenter = Offset(cx + w * 0.14, rFootY);
+    _drawSneaker(canvas, rFootCenter, w * 0.15, h * 0.21);
+
+    // 3. Torso / Shirt (Rounded T-shirt)
+    final torsoRect = Rect.fromCenter(
+      center: Offset(cx, cy + h * 0.03),
+      width: w * 0.40,
+      height: h * 0.28,
+    );
+    final torsoRRect = RRect.fromRectAndRadius(torsoRect, const Radius.circular(7));
+
+    // Shirt gradient
+    final shirtPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          _adjustColor(color, 0.15),
+          color,
+          _adjustColor(color, -0.12),
+        ],
+      ).createShader(torsoRect)
+      ..style = PaintingStyle.fill;
+    canvas.drawRRect(torsoRRect, shirtPaint);
+
+    // Subtle shirt border for crisp definition
+    canvas.drawRRect(
+      torsoRRect,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.18)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.9,
+    );
+
+    // 4. Cute School Backpack / Bag on back
+    final bagRect = Rect.fromCenter(
+      center: Offset(cx, cy + h * 0.09),
+      width: w * 0.32,
+      height: h * 0.21,
+    );
+    final bagRRect = RRect.fromRectAndRadius(bagRect, const Radius.circular(5.5));
+
+    // Vibrant school backpack color (amber / golden orange)
+    const bagColor = Color(0xFFF59E0B);
+    final bagPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          const Color(0xFFFBBF24),
+          bagColor,
+          const Color(0xFFD97706),
+        ],
+      ).createShader(bagRect)
+      ..style = PaintingStyle.fill;
+
+    // Drop shadow under backpack onto torso
+    canvas.drawRRect(
+      bagRRect.shift(const Offset(0, 1.2)),
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.25)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+    );
+    canvas.drawRRect(bagRRect, bagPaint);
+
+    // Backpack front zipper pocket line
+    final zipPaint = Paint()
+      ..color = const Color(0xFF92400E)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+    canvas.drawLine(
+      Offset(cx - w * 0.10, cy + h * 0.11),
+      Offset(cx + w * 0.10, cy + h * 0.11),
+      zipPaint,
+    );
+    // Silver zipper pull tab
+    canvas.drawCircle(Offset(cx, cy + h * 0.11), 1.2, Paint()..color = const Color(0xFFE2E8F0));
+
+    // Two backpack straps looping over shoulders
+    final strapPaint = Paint()
+      ..color = const Color(0xFF334155)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(cx - w * 0.09, cy + h * 0.04), Offset(cx - w * 0.09, cy - h * 0.04), strapPaint);
+    canvas.drawLine(Offset(cx + w * 0.09, cy + h * 0.04), Offset(cx + w * 0.09, cy - h * 0.04), strapPaint);
+
+    // Backpack top handle
+    canvas.drawArc(
+      Rect.fromCenter(center: Offset(cx, cy - h * 0.02), width: w * 0.10, height: h * 0.07),
+      pi,
+      pi,
+      false,
+      Paint()
+        ..color = const Color(0xFF92400E)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+
+    // 5. Swinging Arms & Peach Hands (Swing opposite to feet)
+    // Left Arm (swings with +stride)
+    final lArmSwing = stride * (h * 0.10);
+    final lShoulder = Offset(cx - w * 0.19, cy - h * 0.01);
+    final lHandCenter = Offset(cx - w * 0.22, cy + h * 0.07 + lArmSwing);
+    _drawArmAndHand(canvas, lShoulder, lHandCenter, color);
+
+    // Right Arm (swings with -stride)
+    final rArmSwing = -stride * (h * 0.10);
+    final rShoulder = Offset(cx + w * 0.19, cy - h * 0.01);
+    final rHandCenter = Offset(cx + w * 0.22, cy + h * 0.07 + rArmSwing);
+    _drawArmAndHand(canvas, rShoulder, rHandCenter, color);
+
+    // 6. Child Head, Skin & Ears
+    const skinTone = Color(0xFFFFD2A6);
+    final headCenter = Offset(cx, cy - h * 0.10);
+    final headRadius = w * 0.17;
+
+    // Cute ears
+    canvas.drawCircle(Offset(cx - w * 0.17, cy - h * 0.10), 2.8, Paint()..color = skinTone);
+    canvas.drawCircle(Offset(cx - w * 0.17, cy - h * 0.10), 1.4, Paint()..color = const Color(0xFFFCA5A5));
+    canvas.drawCircle(Offset(cx + w * 0.17, cy - h * 0.10), 2.8, Paint()..color = skinTone);
+    canvas.drawCircle(Offset(cx + w * 0.17, cy - h * 0.10), 1.4, Paint()..color = const Color(0xFFFCA5A5));
+
+    // Head base
+    canvas.drawCircle(headCenter, headRadius, Paint()..color = skinTone);
+
+    // 7. Child's Baseball Cap (Visor pointing straight UP in travel heading)
+    const capColor = Color(0xFF1D4ED8); // Royal cobalt cap
+
+    // Cap crown dome (sitting on back half of head)
+    final crownPath = Path();
+    crownPath.addArc(
+      Rect.fromCircle(center: headCenter, radius: headRadius - 0.5),
+      -0.15 * pi,
+      1.3 * pi,
+    );
+    crownPath.close();
+    canvas.drawPath(
+      crownPath,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFF3B82F6),
+            capColor,
+            const Color(0xFF1E40AF),
+          ],
+        ).createShader(Rect.fromCircle(center: headCenter, radius: headRadius))
+        ..style = PaintingStyle.fill,
+    );
+
+    // White button on cap crown
+    canvas.drawCircle(Offset(cx, cy - h * 0.09), 1.8, Paint()..color = Colors.white);
+
+    // Forward Cap Visor / Bill (Curves forward UP in travel heading)
+    final visorPath = Path();
+    visorPath.moveTo(cx - w * 0.15, cy - h * 0.12);
+    visorPath.quadraticBezierTo(
+      cx,
+      cy - h * 0.28, // Forward tip of visor pointing UP
+      cx + w * 0.15,
+      cy - h * 0.12,
+    );
+    visorPath.quadraticBezierTo(
+      cx,
+      cy - h * 0.17,
+      cx - w * 0.15,
+      cy - h * 0.12,
+    );
+    visorPath.close();
+
+    // Visor fill
+    canvas.drawPath(
+      visorPath,
+      Paint()
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF60A5FA),
+            Color(0xFF2563EB),
+            Color(0xFF1D4ED8),
+          ],
+        ).createShader(Rect.fromLTRB(cx - w * 0.15, cy - h * 0.28, cx + w * 0.15, cy - h * 0.12))
+        ..style = PaintingStyle.fill,
+    );
+
+    // Crisp white trim along visor front lip
+    final visorLip = Path();
+    visorLip.moveTo(cx - w * 0.15, cy - h * 0.12);
+    visorLip.quadraticBezierTo(
+      cx,
+      cy - h * 0.28,
+      cx + w * 0.15,
+      cy - h * 0.12,
+    );
+    canvas.drawPath(
+      visorLip,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.3
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  void _drawSneaker(Canvas canvas, Offset center, double width, double height) {
+    final shoeRect = Rect.fromCenter(center: center, width: width, height: height);
+    final shoeRRect = RRect.fromRectAndRadius(shoeRect, const Radius.circular(3.5));
+
+    // Sneaker body (Dark stylish slate)
+    canvas.drawRRect(shoeRRect, Paint()..color = const Color(0xFF1E293B));
+
+    // White rubber toe bumper in front (-Y)
+    final toeRect = Rect.fromCenter(
+      center: Offset(center.dx, center.dy - height * 0.32),
+      width: width * 0.88,
+      height: height * 0.28,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(toeRect, const Radius.circular(2.5)),
       Paint()..color = Colors.white,
     );
-    canvas.drawCircle(
-      Offset(cx, cy),
-      r - 2.5,
+
+    // Sneaker white sole border
+    canvas.drawRRect(
+      shoeRRect,
       Paint()
-        ..shader = RadialGradient(
-          colors: [color, _adjustColor(color, -0.15)],
-        ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: r - 2.5)),
+        ..color = Colors.white.withValues(alpha: 0.9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.9,
     );
 
-    // 2. Crisp forward navigation chevron/arrow pointing in travel heading (UP)
-    final arrowPath = Path();
-    arrowPath.moveTo(cx, cy - r * 0.65); // Arrow tip
-    arrowPath.lineTo(cx + r * 0.50, cy + r * 0.45);
-    arrowPath.lineTo(cx, cy + r * 0.15); // Inward notch
-    arrowPath.lineTo(cx - r * 0.50, cy + r * 0.45);
-    arrowPath.close();
+    // Cute laces cross stitches
+    final lacesPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.9;
+    canvas.drawLine(
+      Offset(center.dx - width * 0.24, center.dy),
+      Offset(center.dx + width * 0.24, center.dy),
+      lacesPaint,
+    );
+    canvas.drawLine(
+      Offset(center.dx - width * 0.24, center.dy + height * 0.18),
+      Offset(center.dx + width * 0.24, center.dy + height * 0.18),
+      lacesPaint,
+    );
+  }
 
-    canvas.drawPath(arrowPath, Paint()..color = Colors.white);
-    canvas.drawPath(
-      arrowPath,
+  void _drawArmAndHand(Canvas canvas, Offset shoulder, Offset hand, Color sleeveColor) {
+    // Sleeve
+    final sleevePaint = Paint()
+      ..color = sleeveColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3.6
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(shoulder, Offset((shoulder.dx + hand.dx) / 2, (shoulder.dy + hand.dy) / 2), sleevePaint);
+
+    // Bare forearm
+    final armPaint = Paint()
+      ..color = const Color(0xFFFFD2A6)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.8
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset((shoulder.dx + hand.dx) / 2, (shoulder.dy + hand.dy) / 2), hand, armPaint);
+
+    // Peach Hand
+    canvas.drawCircle(hand, 2.7, Paint()..color = const Color(0xFFFFD2A6));
+    canvas.drawCircle(
+      hand,
+      2.7,
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.2)
+        ..color = Colors.black.withValues(alpha: 0.18)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.8,
+        ..strokeWidth = 0.6,
     );
   }
 
@@ -843,5 +1120,6 @@ class _TopDownVehiclePainter extends CustomPainter {
   bool shouldRepaint(covariant _TopDownVehiclePainter oldDelegate) =>
       oldDelegate.vehicleType != vehicleType ||
       oldDelegate.color != color ||
-      oldDelegate.isMoving != isMoving;
+      oldDelegate.isMoving != isMoving ||
+      (vehicleType == VehicleType.human && oldDelegate.walkPhase != walkPhase);
 }

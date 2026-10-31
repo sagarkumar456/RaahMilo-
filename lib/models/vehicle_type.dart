@@ -13,7 +13,7 @@ enum VehicleType {
       case VehicleType.car:
         return 'Car';
       case VehicleType.human:
-        return 'Human';
+        return 'Child / Person';
       case VehicleType.scooty:
         return 'Scooty';
       case VehicleType.bike:
@@ -82,6 +82,8 @@ enum VehicleType {
       case 'walk':
       case 'walking':
       case 'person':
+      case 'child':
+      case 'kid':
         return VehicleType.human;
       case 'scooty':
       case 'scooter':

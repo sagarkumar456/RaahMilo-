@@ -153,16 +153,20 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     });
   }
 
-  void _toggleSpeed() {
-    setState(() {
-      final currentIdx = _speedOptions.indexOf(_playbackSpeed);
-      if (currentIdx == -1 || currentIdx == _speedOptions.length - 1) {
-        _playbackSpeed = _speedOptions.first;
-      } else {
-        _playbackSpeed = _speedOptions[currentIdx + 1];
-      }
-    });
-    if (_isPlaying) _startPlayback();
+  void _decreaseSpeed() {
+    final idx = _speedOptions.indexOf(_playbackSpeed);
+    if (idx > 0) {
+      setState(() => _playbackSpeed = _speedOptions[idx - 1]);
+      if (_isPlaying) _startPlayback();
+    }
+  }
+
+  void _increaseSpeed() {
+    final idx = _speedOptions.indexOf(_playbackSpeed);
+    if (idx != -1 && idx < _speedOptions.length - 1) {
+      setState(() => _playbackSpeed = _speedOptions[idx + 1]);
+      if (_isPlaying) _startPlayback();
+    }
   }
 
   void _showSpeedSelector() {
@@ -682,37 +686,70 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                           ),
                         ),
                       ),
-                      // Speed multiplier pill with <1x slow motion indicator and long-press sheet
-                      InkWell(
-                        onTap: _toggleSpeed,
-                        onLongPress: _showSpeedSelector,
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _playbackSpeed < 1.0 ? AppColors.primary.withValues(alpha: 0.12) : AppColors.tileBackground,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: _playbackSpeed < 1.0 ? AppColors.primary : AppColors.border,
-                            ),
+                      // Speed Stepper Control [-] 1x [+] with slow-motion highlight & long-press sheet
+                      Container(
+                        decoration: BoxDecoration(
+                          color: _playbackSpeed < 1.0 ? AppColors.primary.withValues(alpha: 0.10) : AppColors.tileBackground,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: _playbackSpeed < 1.0 ? AppColors.primary : AppColors.border,
+                            width: 1.2,
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_playbackSpeed < 1.0) ...[
-                                const Icon(Icons.slow_motion_video_rounded, size: 14, color: AppColors.primary),
-                                const SizedBox(width: 4),
-                              ],
-                              Text(
-                                _speedLabel,
-                                style: TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: _playbackSpeed < 1.0 ? AppColors.primary : AppColors.navyDark,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Decrement Speed Button [-]
+                            InkWell(
+                              onTap: _decreaseSpeed,
+                              borderRadius: const BorderRadius.horizontal(left: Radius.circular(13)),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+                                child: Icon(
+                                  Icons.remove_rounded,
+                                  size: 17,
+                                  color: _playbackSpeed > _speedOptions.first ? AppColors.navyDark : AppColors.textSecondary.withValues(alpha: 0.35),
                                 ),
                               ),
-                            ],
-                          ),
+                            ),
+                            // Center Speed Pill (Tappable to show speed sheet)
+                            InkWell(
+                              onTap: _showSpeedSelector,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (_playbackSpeed < 1.0) ...[
+                                      const Icon(Icons.slow_motion_video_rounded, size: 13, color: AppColors.primary),
+                                      const SizedBox(width: 3),
+                                    ],
+                                    Text(
+                                      _speedLabel,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800,
+                                        color: _playbackSpeed < 1.0 ? AppColors.primary : AppColors.navyDark,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            // Increment Speed Button [+]
+                            InkWell(
+                              onTap: _increaseSpeed,
+                              borderRadius: const BorderRadius.horizontal(right: Radius.circular(13)),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
+                                child: Icon(
+                                  Icons.add_rounded,
+                                  size: 17,
+                                  color: _playbackSpeed < _speedOptions.last ? AppColors.navyDark : AppColors.textSecondary.withValues(alpha: 0.35),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],

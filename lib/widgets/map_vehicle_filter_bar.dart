@@ -53,7 +53,7 @@ class MapVehicleFilterBar extends StatelessWidget {
             onTap: () => onVehicleSelected(VehicleType.car),
           ),
           _buildItem(
-            label: 'Human',
+            label: 'Child',
             icon: Icons.directions_walk_rounded,
             color: VehicleType.human.color,
             isSelected: !isAllSelected && selectedVehicle == VehicleType.human,

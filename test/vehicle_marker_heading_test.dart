@@ -227,5 +227,33 @@ void main() {
       // Verify that it stays in the small arc between -0.1 and 0.1, never swinging past pi
       expect(angle.abs(), lessThan(0.2));
     });
+
+    testWidgets('Child / Person marker renders and animates walking strides when moving', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: VehicleMarkerWidget(
+                vehicleType: VehicleType.human,
+                isLive: true,
+                isMoving: true,
+                heading: 0.0,
+                size: 48.0,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(VehicleMarkerWidget), findsOneWidget);
+      expect(find.byType(CustomPaint), findsWidgets);
+
+      // Verify strings 'child' and 'kid' map to VehicleType.human
+      expect(VehicleType.fromString('child'), VehicleType.human);
+      expect(VehicleType.fromString('kid'), VehicleType.human);
+      expect(VehicleType.fromString('human'), VehicleType.human);
+      expect(VehicleType.human.displayName, 'Child / Person');
+    });
   });
 }
