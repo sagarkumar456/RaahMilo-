@@ -16,6 +16,7 @@ import '../services/road_routing_service.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
 import '../utils/trip_direction_helper.dart';
+import '../widgets/animated_dashed_polyline_layer.dart';
 import '../widgets/map_calendar_bar.dart';
 import '../widgets/pulse_indicator.dart';
 import '../widgets/stoppage_marker_widget.dart';
@@ -680,7 +681,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         );
 
         // Polylines & Markers for FlutterMap
-        final List<Polyline> polylines = [];
+        final List<RoutePolylineStyle> animatedRoutes = [];
         final List<Marker> markers = [];
         final List<Marker> arrowMarkers = [];
 
@@ -694,28 +695,17 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
 
           final pts = seg.points;
           if (pts.length >= 2) {
-            // Road casing
-            polylines.add(
-              Polyline(
+            animatedRoutes.add(
+              RoutePolylineStyle(
                 points: pts,
-                strokeWidth: 7.2,
-                color: seg.casingColor,
-              ),
-            );
-            // Main route line in distinct color
-            polylines.add(
-              Polyline(
-                points: pts,
-                strokeWidth: 5.2,
-                color: seg.primaryColor,
-              ),
-            );
-
-            // Directional chevron arrows along this specific route
-            arrowMarkers.addAll(
-              buildDirectionalArrowMarkers(
-                pts,
                 routeColor: seg.primaryColor,
+                casingColor: seg.casingColor,
+                strokeWidth: 6.2,
+                casingWidth: 12.0,
+                dashWidth: 2.8,
+                dashLength: 13.0,
+                gapLength: 8.5,
+                isMoving: false, // Completed history trips remain static
               ),
             );
           }
@@ -821,22 +811,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         // 2. Render Active Live Tracking Route (if currently tracking on today's view)
         if (isActive && hasLiveRoute && isToday) {
           final liveColor = dayTrips.isNotEmpty ? TripDirectionHelper.colorReturn : TripDirectionHelper.colorOutward;
-          polylines.add(
-            Polyline(
+          animatedRoutes.add(
+            RoutePolylineStyle(
               points: liveRoutePoints,
-              strokeWidth: 7.2,
-              color: liveColor.withValues(alpha: 0.25),
+              routeColor: liveColor,
+              casingColor: liveColor.withValues(alpha: 0.20),
+              strokeWidth: 6.2,
+              casingWidth: 12.0,
+              dashWidth: 2.8,
+              dashLength: 13.0,
+              gapLength: 8.5,
+              isMoving: isMoving, // Animate dashes forward towards car when moving, stop when stationary!
             ),
-          );
-          polylines.add(
-            Polyline(
-              points: liveRoutePoints,
-              strokeWidth: 5.2,
-              color: liveColor,
-            ),
-          );
-          arrowMarkers.addAll(
-            buildDirectionalArrowMarkers(liveRoutePoints, routeColor: liveColor),
           );
 
           // Live Start Marker
@@ -989,11 +975,10 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                   children: [
                     AppMapTiles.buildTileLayer(isSatellite: _isSatellite),
 
-                    // Polylines Layer
-                    if (polylines.isNotEmpty)
-                      PolylineLayer(
-                        cullingMargin: 20.0,
-                        polylines: polylines,
+                    // Animated Dashed Road Polylines Layer
+                    if (animatedRoutes.isNotEmpty)
+                      AnimatedDashedPolylineLayer(
+                        routes: animatedRoutes,
                       ),
 
                     // Directional Chevron Arrows

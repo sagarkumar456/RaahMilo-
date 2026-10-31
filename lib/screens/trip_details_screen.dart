@@ -9,6 +9,7 @@ import '../models/trip_model.dart';
 import '../services/road_routing_service.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
+import '../widgets/animated_dashed_polyline_layer.dart';
 import '../widgets/stoppage_marker_widget.dart';
 import '../widgets/vehicle_marker_widget.dart';
 import 'share_screen.dart';
@@ -303,30 +304,23 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
               ),
               children: [
                 AppMapTiles.buildTileLayer(),
-                PolylineLayer(
-                  cullingMargin: 20.0,
-                  polylines: [
-                    // Outer casing / road edge
-                    Polyline(
-                      points: displayRoute,
-                      strokeWidth: 7.2,
-                      color: const Color(0xFF10B981).withValues(alpha: 0.25),
-                    ),
-                    // Main route line (Green)
-                    Polyline(
-                      points: displayRoute,
-                      strokeWidth: 5.2,
-                      color: const Color(0xFF10B981),
-                    ),
-                  ],
-                ),
-              // Directional arrows embedded along route
-              MarkerLayer(
-                markers: buildDirectionalArrowMarkers(
-                  displayRoute,
-                  routeColor: const Color(0xFF10B981),
-                ),
-              ),
+                // Animated Dashed Road Polyline (exact match with reference design)
+                if (displayRoute.length >= 2)
+                  AnimatedDashedPolylineLayer(
+                    routes: [
+                      RoutePolylineStyle(
+                        points: displayRoute,
+                        routeColor: const Color(0xFF10B981),
+                        casingColor: const Color(0xFF10B981).withValues(alpha: 0.20),
+                        strokeWidth: 6.2,
+                        casingWidth: 12.0,
+                        dashWidth: 2.8,
+                        dashLength: 13.0,
+                        gapLength: 8.5,
+                        isMoving: _isPlaying, // Flows towards car during playback, stops when paused/stationary
+                      ),
+                    ],
+                  ),
               MarkerLayer(
                 markers: [
                   if (latLngList.isNotEmpty)
