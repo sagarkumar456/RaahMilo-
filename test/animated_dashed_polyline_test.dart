@@ -2,9 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart' as ll;
+import 'package:trackmyphone/core/map_tiles.dart';
 import 'package:trackmyphone/widgets/animated_dashed_polyline_layer.dart';
 
 void main() {
+  testWidgets('AppMapTiles builds tile layers without unmodifiable map or runtime exceptions', (tester) async {
+    final streetLayer = AppMapTiles.buildTileLayer(isSatellite: false);
+    final satelliteLayer = AppMapTiles.buildTileLayer(isSatellite: true);
+
+    expect(streetLayer.tileProvider, isNotNull);
+    expect(satelliteLayer.tileProvider, isNotNull);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: FlutterMap(
+            options: const MapOptions(
+              initialCenter: ll.LatLng(12.9720, 77.5950),
+              initialZoom: 15.0,
+            ),
+            children: [
+              streetLayer,
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(TileLayer), findsOneWidget);
+  });
   testWidgets('AnimatedDashedPolylineLayer renders static route when isMoving is false', (tester) async {
     final route = RoutePolylineStyle(
       points: [
