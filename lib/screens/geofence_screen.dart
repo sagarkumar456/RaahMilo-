@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart' as ll;
 import '../core/app_colors.dart';
 import '../core/map_tiles.dart';
 import '../models/geofence_model.dart';
+import '../services/alert_sound_service.dart';
 import '../services/geofence_service.dart';
 import '../services/tracking_service.dart';
 
@@ -23,6 +25,7 @@ class _GeofenceScreenState extends State<GeofenceScreen> with SingleTickerProvid
   double _radius = 500.0;
   bool _notifyOnEntryExit = true;
   ll.LatLng _center = const ll.LatLng(28.6139, 77.2090);
+  StreamSubscription<GeofenceAlert>? _alertSub;
 
   final List<String> _quickNames = ['Home 🏠', 'Office 🏢', 'School 🏫', 'Gym 🏋️', 'Shop 🛍️'];
 
@@ -40,10 +43,85 @@ class _GeofenceScreenState extends State<GeofenceScreen> with SingleTickerProvid
         _center = ll.LatLng(existing.latitude, existing.longitude);
       }
     }
+
+    // Immediately fetch real GPS location so SafeZone centers where user actually is
+    trackingService.initCurrentLocation(forceRefresh: true).then((p) {
+      if (p != null && mounted) {
+        setState(() {
+          _center = ll.LatLng(p.latitude, p.longitude);
+        });
+        if (_isMapReady) {
+          try {
+            _mapController.move(_center, 15.5);
+          } catch (_) {}
+        }
+        GeofenceService().checkLocation(p);
+      }
+    });
+
+    // Listen for geofence entry/exit alerts to display instant prominent popups
+    _alertSub = GeofenceService().alertStream.listen((alert) {
+      if (!mounted) return;
+      _showLiveAlertPopup(alert);
+    });
+  }
+
+  void _showLiveAlertPopup(GeofenceAlert alert) {
+    AlertSoundService.playAlertSound();
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.all(22),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: alert.isEntry
+                    ? AppColors.success.withValues(alpha: 0.15)
+                    : const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                alert.isEntry ? Icons.shield_rounded : Icons.logout_rounded,
+                color: alert.isEntry ? AppColors.success : const Color(0xFFF59E0B),
+                size: 38,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              alert.title,
+              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.navyDark),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              alert.message,
+              style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, height: 1.3),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: alert.isEntry ? AppColors.success : const Color(0xFFF59E0B),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                minimumSize: const Size.fromHeight(44),
+              ),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('OK Got it', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _alertSub?.cancel();
     _tabController.dispose();
     _nameController.dispose();
     super.dispose();
@@ -68,6 +146,11 @@ class _GeofenceScreenState extends State<GeofenceScreen> with SingleTickerProvid
       radiusMeters: _radius,
       notifyOnEntryExit: _notifyOnEntryExit,
     );
+
+    final currentPos = trackingService.current;
+    if (currentPos != null) {
+      GeofenceService().checkLocation(currentPos);
+    }
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -522,15 +605,17 @@ class _GeofenceScreenState extends State<GeofenceScreen> with SingleTickerProvid
             foregroundColor: AppColors.primary,
             elevation: 3,
             tooltip: 'Center on My Location',
-            onPressed: () {
-              final pos = trackingService.current;
-              if (pos != null) {
-                setState(() => _center = ll.LatLng(pos.latitude, pos.longitude));
+            onPressed: () async {
+              var pos = trackingService.current;
+              pos ??= await trackingService.initCurrentLocation(forceRefresh: true);
+              if (pos != null && mounted) {
+                setState(() => _center = ll.LatLng(pos!.latitude, pos.longitude));
                 if (_isMapReady) {
                   try {
                     _mapController.move(_center, 15.5);
                   } catch (_) {}
                 }
+                GeofenceService().checkLocation(pos);
               }
             },
             child: const Icon(Icons.my_location_rounded, size: 20),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/app_notification.dart';
+import 'alert_sound_service.dart';
 
 class NotificationService extends ChangeNotifier {
   static final NotificationService _instance = NotificationService._internal();
@@ -113,6 +114,7 @@ class NotificationService extends ChangeNotifier {
         isRead: false,
       ),
     );
+    AlertSoundService.playAlertSound();
     notifyListeners();
   }
 

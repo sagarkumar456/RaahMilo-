@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import '../core/app_colors.dart';
+import '../services/alert_sound_service.dart';
 import '../services/geofence_service.dart';
 import '../services/notification_service.dart';
 import 'dashboard_screen.dart';
@@ -50,6 +51,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void _listenForGeofenceAlerts() {
     _geofenceAlertSub = GeofenceService().alertStream.listen((alert) {
       if (!mounted) return;
+      AlertSoundService.playAlertSound();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(

@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_notification.dart';
 import '../models/geofence_model.dart';
+import 'alert_sound_service.dart';
 import 'notification_service.dart';
 
 class GeofenceAlert {
@@ -59,6 +60,28 @@ class GeofenceService extends ChangeNotifier {
     notifyListeners();
   }
 
+  StreamSubscription<Position>? _positionSubscription;
+
+  void startMonitoring() {
+    if (_positionSubscription != null) return;
+    try {
+      _positionSubscription = Geolocator.getPositionStream(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          distanceFilter: 3, // check every 3 meters of movement
+        ),
+      ).listen(
+        (pos) => checkLocation(pos),
+        onError: (_) {},
+      );
+    } catch (_) {}
+  }
+
+  void stopMonitoring() {
+    _positionSubscription?.cancel();
+    _positionSubscription = null;
+  }
+
   Future<void> _loadFromStorage() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -67,21 +90,21 @@ class GeofenceService extends ChangeNotifier {
         final List decoded = jsonDecode(jsonStr);
         _geofences.clear();
         for (final item in decoded) {
-          _geofences.add(GeofenceModel.fromMap(Map<String, dynamic>.from(item)));
+          final g = GeofenceModel.fromMap(Map<String, dynamic>.from(item));
+          // Strip legacy dummy hardcoded Delhi geofence
+          if (g.id != 'default_home') {
+            _geofences.add(g);
+          }
         }
       }
 
-      if (_geofences.isEmpty) {
-        _initDefault();
-      } else {
+      if (_geofences.isNotEmpty) {
         _selectedGeofence = _geofences.first;
       }
+      startMonitoring();
       notifyListeners();
     } catch (e) {
       debugPrint('Error loading geofences: $e');
-      if (_geofences.isEmpty) {
-        _initDefault();
-      }
     }
   }
 
@@ -93,24 +116,6 @@ class GeofenceService extends ChangeNotifier {
     } catch (e) {
       debugPrint('Error saving geofences: $e');
     }
-  }
-
-  void _initDefault() {
-    final defaultHome = GeofenceModel(
-      id: 'default_home',
-      name: 'Home Zone',
-      latitude: 28.6139,
-      longitude: 77.2090,
-      radiusMeters: 500,
-      notifyOnEntryExit: true,
-      isActive: true,
-      createdAt: DateTime.now(),
-    );
-    _geofences.add(defaultHome);
-    _selectedGeofence = defaultHome;
-    _insideStates[defaultHome.id] = true;
-    _distances[defaultHome.id] = 0.0;
-    _saveToStorage();
   }
 
   Future<void> saveGeofence({
@@ -142,9 +147,28 @@ class GeofenceService extends ChangeNotifier {
 
     _selectedGeofence = newGeofence;
 
-    // Immediately evaluate state if we have current coordinates
-    _evaluateSingleGeofence(newGeofence);
+    // Immediately calculate distance & baseline from last known or current location
+    try {
+      final lastPos = await Geolocator.getLastKnownPosition();
+      if (lastPos != null) {
+        final dist = Geolocator.distanceBetween(
+          latitude,
+          longitude,
+          lastPos.latitude,
+          lastPos.longitude,
+        );
+        _distances[geofenceId] = dist;
+        _insideStates[geofenceId] = dist <= radiusMeters;
+      } else {
+        _distances[geofenceId] = 0.0;
+        _insideStates[geofenceId] = true;
+      }
+    } catch (_) {
+      _distances[geofenceId] = 0.0;
+      _insideStates[geofenceId] = true;
+    }
 
+    startMonitoring();
     await _saveToStorage();
     notifyListeners();
   }
@@ -169,12 +193,7 @@ class GeofenceService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _evaluateSingleGeofence(GeofenceModel g) {
-    // If we have any last calculated distance, keep it, otherwise set neutral baseline
-    if (!_insideStates.containsKey(g.id)) {
-      _insideStates[g.id] = true; // default neutral until real GPS checks
-    }
-  }
+  DateTime? _simulationPausedUntil;
 
   /// Simulates device moving outside the specified geofence boundary.
   /// Sets prior state as inside to ensure an authentic exit transition and alert.
@@ -182,6 +201,7 @@ class GeofenceService extends ChangeNotifier {
     final idx = _geofences.indexWhere((g) => g.id == geofenceId);
     if (idx == -1) return;
     final g = _geofences[idx];
+    _simulationPausedUntil = DateTime.now().add(const Duration(seconds: 45));
     _insideStates[geofenceId] = true;
     final offsetMeters = g.radiusMeters + 250.0;
     final dLat = offsetMeters / 111320.0;
@@ -194,16 +214,21 @@ class GeofenceService extends ChangeNotifier {
     final idx = _geofences.indexWhere((g) => g.id == geofenceId);
     if (idx == -1) return;
     final g = _geofences[idx];
+    _simulationPausedUntil = DateTime.now().add(const Duration(seconds: 45));
     _insideStates[geofenceId] = false;
     checkLocationLatLng(g.latitude, g.longitude);
   }
 
   /// Re-evaluates geofences with the device's real coordinates.
   void resetToRealPosition(double lat, double lng) {
+    _simulationPausedUntil = null;
     checkLocationLatLng(lat, lng);
   }
 
   void checkLocation(Position position) {
+    if (_simulationPausedUntil != null && DateTime.now().isBefore(_simulationPausedUntil!)) {
+      return; // Temporarily pause live GPS overwrite during test alert simulation
+    }
     checkLocationLatLng(position.latitude, position.longitude);
   }
 
@@ -248,6 +273,8 @@ class GeofenceService extends ChangeNotifier {
             type: NotificationType.leftZone,
           );
 
+          AlertSoundService.playAlertSound(type: 'alarm');
+
           _alertStreamController.add(GeofenceAlert(
             title: title,
             message: message,
@@ -268,6 +295,8 @@ class GeofenceService extends ChangeNotifier {
             subtitle: message,
             type: NotificationType.arrivedZone,
           );
+
+          AlertSoundService.playAlertSound(type: 'alarm');
 
           _alertStreamController.add(GeofenceAlert(
             title: title,
