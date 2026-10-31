@@ -332,18 +332,18 @@ class TrackingService extends ChangeNotifier {
 
   /// Evaluates whether a new candidate position [candidate] represents genuine physical movement
   /// rather than stationary GPS jitter or outlier sensor telemetry.
-  /// Accommodates in-bag/in-pocket GPS signal attenuation (up to 100m accuracy) while
-  /// rejecting gross cellular tower triangulation (> 100m).
+  /// Accommodates in-bag/in-pocket GPS signal attenuation (up to 250m accuracy) while
+  /// rejecting gross cellular tower triangulation (> 250m).
   static bool isGenuineMovement({
     required Position candidate,
     required TripPoint lastPoint,
     Position? stationaryAnchor,
     bool isStationary = true,
   }) {
-    // 1. Reject gross noise (cellular tower triangulation: > 100m)
-    // Note: Phones inside bags, pockets, or glove compartments experience satellite signal
-    // attenuation where accuracy typically ranges between 35m - 95m.
-    if (candidate.accuracy > 100.0) return false;
+    // 1. Reject gross noise (cellular tower triangulation: > 250m)
+    // Note: Phones inside bags, pockets, backpacks, or glove compartments experience satellite signal
+    // attenuation where accuracy typically ranges between 35m - 220m.
+    if (candidate.accuracy > 250.0) return false;
 
     // 2. Physical displacement from last registered point
     final step = Geolocator.distanceBetween(
@@ -356,7 +356,7 @@ class TrackingService extends ChangeNotifier {
     // 3. Teleportation / Outlier Jump Filter (> 55 m/s = 198 km/h over large jump)
     final timeDiffSec = candidate.timestamp.difference(lastPoint.timestamp).inSeconds.abs();
     final calcSpeed = timeDiffSec > 0 ? (step / timeDiffSec) : candidate.speed;
-    if (timeDiffSec >= 1 && calcSpeed > 55.0 && step > 120.0) {
+    if (timeDiffSec >= 1 && calcSpeed > 55.0 && step > 150.0) {
       return false;
     }
 
@@ -378,12 +378,12 @@ class TrackingService extends ChangeNotifier {
       final anchorTolerance = math.max(7.5, math.min(20.0, candidate.accuracy * 0.55));
 
       // Inside anchor bubble: reject satellite drift unless speed indicates clear breakout motion
-      // Lowered to 0.8 m/s so normal walking pace (3-4 km/h) with phone inside a bag/pocket breaks out cleanly.
+      // Lowered to 0.7 m/s so normal walking pace (2.5 - 4 km/h) with phone inside a bag/pocket breaks out cleanly.
       if (distFromAnchor < anchorTolerance) {
-        if (candidate.speed >= 0.8 && distFromAnchor >= 4.5) {
+        if (candidate.speed >= 0.7 && distFromAnchor >= 4.0) {
           return true; // Steady walking breakout motion with phone in bag
         }
-        if (calcSpeed >= 0.9 && distFromAnchor >= 5.0) {
+        if (calcSpeed >= 0.7 && distFromAnchor >= 4.5) {
           return true; // Steady walking breakout
         }
         return false; // Stationary satellite jitter! Anchor remains locked.
@@ -392,7 +392,7 @@ class TrackingService extends ChangeNotifier {
       // Moving beyond anchor bubble: check outlier speed relative to anchor
       final anchorTimeDiffSec = candidate.timestamp.difference(anchor.timestamp).inSeconds.abs();
       final anchorSpeed = anchorTimeDiffSec > 0 ? (distFromAnchor / anchorTimeDiffSec) : candidate.speed;
-      if (anchorTimeDiffSec >= 1 && anchorSpeed > 55.0 && distFromAnchor > 120.0) {
+      if (anchorTimeDiffSec >= 1 && anchorSpeed > 55.0 && distFromAnchor > 150.0) {
         return false;
       }
 
@@ -405,8 +405,8 @@ class TrackingService extends ChangeNotifier {
     // but capture all turns, bends, and corner waypoints faithfully.
     if (step < 1.8) return false;
 
-    // Discard gross cellular tower triangulation fixes while moving (> 100m)
-    if (candidate.accuracy > 100.0) return false;
+    // Discard gross cellular tower triangulation fixes while moving (> 250m)
+    if (candidate.accuracy > 250.0) return false;
 
     return true;
   }
@@ -418,9 +418,9 @@ class TrackingService extends ChangeNotifier {
     geocodingService.updateFromPosition(p.latitude, p.longitude);
     antiTheftService.checkPositionForTheft(p);
 
-    // Reject coarse cell-tower triangulation fixes (> 100m) from movement path.
-    // In-bag or pocket positioning typically maintains 30m - 95m accuracy.
-    if (p.accuracy > 100.0) {
+    // Reject coarse cell-tower triangulation fixes (> 250m) from movement path.
+    // In-bag or pocket positioning typically maintains 30m - 220m accuracy.
+    if (p.accuracy > 250.0) {
       notifyListeners();
       return;
     }

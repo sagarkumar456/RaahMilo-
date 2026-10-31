@@ -205,7 +205,7 @@ void main() {
       expect(isGenuine, false, reason: 'Impossible physical speed jump must be rejected');
     });
 
-    test('Gross Accuracy Filter: Discards cell-tower level inaccuracies (> 100m)', () {
+    test('Gross Accuracy Filter: Discards cell-tower level inaccuracies (> 250m)', () {
       final base = DateTime(2026, 10, 20, 16, 0, 0);
 
       final lastPt = TripPoint(
@@ -220,7 +220,7 @@ void main() {
         latitude: 28.6105,
         longitude: 77.2105,
         timestamp: base.add(const Duration(seconds: 3)),
-        accuracy: 120.0, // Cell tower triangulation
+        accuracy: 320.0, // Cell tower triangulation (> 250m)
         altitude: 0.0,
         altitudeAccuracy: 0.0,
         heading: 0.0,
@@ -234,10 +234,10 @@ void main() {
         lastPoint: lastPt,
       );
 
-      expect(isGenuine, false, reason: 'Accuracy > 100m indicates cellular triangulation and must be rejected from path');
+      expect(isGenuine, false, reason: 'Accuracy > 250m indicates cellular triangulation and must be rejected from path');
     });
 
-    test('In-Bag / In-Pocket GPS: Accepts legitimate movement when accuracy is moderately degraded (30m-95m)', () {
+    test('In-Bag / In-Pocket GPS: Accepts legitimate movement when accuracy is degraded up to 220m due to bag/backpack', () {
       final base = DateTime(2026, 10, 20, 16, 30, 0);
 
       final lastPt = TripPoint(
@@ -248,12 +248,12 @@ void main() {
         timestamp: base,
       );
 
-      // Phone inside bag/backpack: moved 15m in 5s (~3 m/s), but accuracy degraded to 85m due to fabric
+      // Phone inside bag/backpack: moved 15m in 5s (~3 m/s), but accuracy degraded to 160m due to thick fabric & zipper
       final pInBag = Position(
         latitude: 28.61012,
         longitude: 77.21008,
         timestamp: base.add(const Duration(seconds: 5)),
-        accuracy: 85.0, // Degraded satellite signal inside backpack/bag
+        accuracy: 160.0, // Degraded satellite signal inside backpack/bag
         altitude: 0.0,
         altitudeAccuracy: 0.0,
         heading: 30.0,
@@ -267,7 +267,7 @@ void main() {
         lastPoint: lastPt,
       );
 
-      expect(isGenuine, true, reason: 'Phone inside bag or pocket with accuracy between 30m-95m must be recorded on polyline');
+      expect(isGenuine, true, reason: 'Phone inside bag or backpack with accuracy degraded up to 220m must be recorded on polyline');
     });
 
     test('Stationary Anchor Crawl Prevention: Consecutive wander points around desk do NOT get accepted', () {

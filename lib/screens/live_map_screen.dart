@@ -601,8 +601,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
             .map((p) => ll.LatLng(p.latitude, p.longitude))
             .toList();
 
-        // Connect polyline right up to the live moving vehicle marker position only if in active motion
-        if (isActive && liveRoutePoints.isNotEmpty && trackingService.isMoving) {
+        // Connect polyline right up to the live moving vehicle marker position
+        if (isActive && liveRoutePoints.isNotEmpty) {
           final liveTip = _animatedMarkerCoord ?? currentCoord;
           final lastPt = liveRoutePoints.last;
           if (approximateDistanceMeters(lastPt, liveTip) >= 2.5) {
