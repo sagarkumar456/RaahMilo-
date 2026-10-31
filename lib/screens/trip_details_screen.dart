@@ -28,7 +28,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   bool _isMapReady = false;
   bool _isPlaying = false;
   double _sliderValue = 0.5;
-  int _playbackSpeed = 1; // 1x, 2x, 4x
+  double _playbackSpeed = 1.0; // 0.25x, 0.5x, 0.75x, 1x, 2x, 4x
+  static const List<double> _speedOptions = [0.25, 0.5, 0.75, 1.0, 2.0, 4.0];
   Timer? _playbackTimer;
   List<ll.LatLng>? _snappedRoute;
 
@@ -128,15 +129,24 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     }
   }
 
+  String get _speedLabel {
+    if (_playbackSpeed == _playbackSpeed.roundToDouble()) {
+      return '${_playbackSpeed.toInt()}x';
+    }
+    return '${_playbackSpeed}x';
+  }
+
   void _startPlayback() {
     _playbackTimer?.cancel();
-    _playbackTimer = Timer.periodic(Duration(milliseconds: (200 / _playbackSpeed).round()), (timer) {
+    // 50ms tick interval for ultra-smooth 20 fps progress without jerky jumps
+    _playbackTimer = Timer.periodic(const Duration(milliseconds: 50), (timer) {
       if (!mounted) return;
       setState(() {
         if (_sliderValue >= 1.0) {
           _sliderValue = 0.0;
         } else {
-          _sliderValue += 0.015;
+          // At 1.0x, ~14.2s for complete trip; at 0.5x, ~28.5s in detailed slow-mo
+          _sliderValue = (_sliderValue + 0.0035 * _playbackSpeed).clamp(0.0, 1.0);
         }
       });
       _updatePlaybackMarker();
@@ -145,15 +155,80 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   void _toggleSpeed() {
     setState(() {
-      if (_playbackSpeed == 1) {
-        _playbackSpeed = 2;
-      } else if (_playbackSpeed == 2) {
-        _playbackSpeed = 4;
+      final currentIdx = _speedOptions.indexOf(_playbackSpeed);
+      if (currentIdx == -1 || currentIdx == _speedOptions.length - 1) {
+        _playbackSpeed = _speedOptions.first;
       } else {
-        _playbackSpeed = 1;
+        _playbackSpeed = _speedOptions[currentIdx + 1];
       }
     });
     if (_isPlaying) _startPlayback();
+  }
+
+  void _showSpeedSelector() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const Text(
+              'Playback Speed (प्लेबैक स्पीड)',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: AppColors.navyDark,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _speedOptions.map((speed) {
+                final isSelected = _playbackSpeed == speed;
+                final label = speed == speed.roundToDouble()
+                    ? '${speed.toInt()}x'
+                    : '${speed}x';
+                final desc = speed < 1.0 ? 'Slow' : (speed == 1.0 ? 'Normal' : 'Fast');
+
+                return ChoiceChip(
+                  label: Text('$label ($desc)'),
+                  selected: isSelected,
+                  selectedColor: AppColors.primary,
+                  labelStyle: TextStyle(
+                    color: isSelected ? Colors.white : AppColors.navyDark,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  ),
+                  onSelected: (_) {
+                    setState(() => _playbackSpeed = speed);
+                    if (_isPlaying) _startPlayback();
+                    Navigator.pop(ctx);
+                  },
+                );
+              }).toList(),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _updatePlaybackMarker() {
@@ -161,8 +236,8 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     if (activeList.isEmpty) return;
     final index = ((activeList.length - 1) * _sliderValue).round().clamp(0, activeList.length - 1);
     final pt = activeList[index];
-    // Smooth camera panning: avoid moving map constantly during high speed playback to keep framerate ultra smooth
-    if (_playbackSpeed == 1 || index % 2 == 0) {
+    // Smooth camera panning
+    if (_playbackSpeed <= 1.0 || index % 2 == 0) {
       _safeMoveMap(pt, _safeZoom);
     }
   }
@@ -607,24 +682,36 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                           ),
                         ),
                       ),
-                      // Speed multiplier pill
+                      // Speed multiplier pill with <1x slow motion indicator and long-press sheet
                       InkWell(
                         onTap: _toggleSpeed,
+                        onLongPress: _showSpeedSelector,
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                           decoration: BoxDecoration(
-                            color: AppColors.tileBackground,
+                            color: _playbackSpeed < 1.0 ? AppColors.primary.withValues(alpha: 0.12) : AppColors.tileBackground,
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppColors.border),
-                          ),
-                          child: Text(
-                            '${_playbackSpeed}x',
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.navyDark,
+                            border: Border.all(
+                              color: _playbackSpeed < 1.0 ? AppColors.primary : AppColors.border,
                             ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_playbackSpeed < 1.0) ...[
+                                const Icon(Icons.slow_motion_video_rounded, size: 14, color: AppColors.primary),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                _speedLabel,
+                                style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: _playbackSpeed < 1.0 ? AppColors.primary : AppColors.navyDark,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
