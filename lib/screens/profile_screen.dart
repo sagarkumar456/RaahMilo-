@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 import '../core/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/tracking_service.dart';
-import 'anti_theft_screen.dart';
+import 'geofence_screen.dart';
 import 'login_screen.dart';
 import 'premium_screen.dart';
 import 'settings_screen.dart';
@@ -163,14 +163,14 @@ class ProfileScreen extends StatelessWidget {
                 },
               ),
               _profileMenuTile(
-                icon: Icons.shield_outlined,
+                icon: Icons.radar_rounded,
                 iconColor: const Color(0xFF10B981),
-                title: 'Anti-Theft Protection',
-                subtitle: 'Alarm siren & vehicle arming',
+                title: 'Geofence Safe Zones',
+                subtitle: 'Custom perimeter & entry/exit alerts',
                 onTap: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const AntiTheftScreen()),
+                    MaterialPageRoute(builder: (_) => const GeofenceScreen()),
                   );
                 },
               ),
@@ -178,7 +178,7 @@ class ProfileScreen extends StatelessWidget {
                 icon: Icons.settings_outlined,
                 iconColor: AppColors.navyDark,
                 title: 'Settings',
-                subtitle: 'Anti-Theft, preferences & alerts',
+                subtitle: 'Preferences & alert thresholds',
                 onTap: () {
                   Navigator.push(
                     context,

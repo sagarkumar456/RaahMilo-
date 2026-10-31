@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../core/app_colors.dart';
-import '../services/anti_theft_service.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
-import 'anti_theft_screen.dart';
+import 'geofence_screen.dart';
 import 'support_chat_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -66,9 +65,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'gpsAccuracy': _gpsAccuracy,
       'overspeedAlert': _overspeedAlert,
       'speedLimit': _speedLimit,
-      'antiTheftSensitivity': antiTheftService.sensitivity,
-      'loudSiren': antiTheftService.loudSiren,
-      'autoArmOnParking': antiTheftService.autoArmOnParking,
     });
   }
 
@@ -435,7 +431,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([antiTheftService, apiService]),
+      animation: apiService,
       builder: (context, _) {
         final isAdmin = _isAdmin;
 
@@ -456,97 +452,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
           body: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
             children: [
-              // 1. Anti-Theft & Alarm Section
-              _buildSectionHeader('Anti-Theft & Alarm Controls'),
+              // 1. Geofence Safe Zones
+              _buildSectionHeader('Geofence Safe Zones'),
               Container(
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
                   border: Border.all(color: AppColors.border),
                 ),
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: antiTheftService.isArmed
-                              ? const Color(0xFFE6F9F0)
-                              : AppColors.tileBackground,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          antiTheftService.isArmed ? Icons.shield_rounded : Icons.shield_outlined,
-                          color: antiTheftService.isArmed ? AppColors.success : AppColors.textSecondary,
-                        ),
-                      ),
-                      title: const Text('Anti-Theft Protection', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                      subtitle: Text(
-                        antiTheftService.isArmed ? 'Armed • Shield active' : 'Disarmed • Tap to manage',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => const AntiTheftScreen()),
-                        );
-                      },
+                child: ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE6F9F0),
+                      shape: BoxShape.circle,
                     ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      title: const Text('Loud Siren & Vibration', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Play audible siren pattern on movement breach', style: TextStyle(fontSize: 11)),
-                      value: antiTheftService.loudSiren,
-                      activeColor: AppColors.primary,
-                      onChanged: (val) {
-                        antiTheftService.setLoudSiren(val);
-                        _savePreference('antitheft_loud_siren', val);
-                      },
-                    ),
-                    const Divider(height: 1),
-                    SwitchListTile(
-                      title: const Text('Auto-Arm on Stop / Park', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                      subtitle: const Text('Automatically guard vehicle when parking detected', style: TextStyle(fontSize: 11)),
-                      value: antiTheftService.autoArmOnParking,
-                      activeColor: AppColors.primary,
-                      onChanged: (val) {
-                        antiTheftService.setAutoArmOnParking(val);
-                        _savePreference('antitheft_auto_arm', val);
-                      },
-                    ),
-                    const Divider(height: 1),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Theft Sensitivity', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                              Text('Distance threshold before alarm', style: TextStyle(fontSize: 11, color: AppColors.textSecondary)),
-                            ],
-                          ),
-                          DropdownButton<String>(
-                            value: antiTheftService.sensitivity,
-                            underline: const SizedBox(),
-                            items: const [
-                              DropdownMenuItem(value: 'High', child: Text('High (8m)')),
-                              DropdownMenuItem(value: 'Medium', child: Text('Medium (15m)')),
-                              DropdownMenuItem(value: 'Low', child: Text('Low (30m)')),
-                            ],
-                            onChanged: (val) {
-                              if (val != null) {
-                                antiTheftService.setSensitivity(val);
-                                _savePreference('antitheft_sensitivity', val);
-                              }
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                    child: const Icon(Icons.radar_rounded, color: Color(0xFF10B981)),
+                  ),
+                  title: const Text('Geofence Safe Zones', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  subtitle: const Text('Manage custom zones, perimeters & entry/exit alerts', style: TextStyle(fontSize: 12)),
+                  trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const GeofenceScreen()),
+                    );
+                  },
                 ),
               ),
 

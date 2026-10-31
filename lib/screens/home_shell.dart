@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import '../core/app_colors.dart';
-import '../services/anti_theft_service.dart';
+import '../services/geofence_service.dart';
 import '../services/notification_service.dart';
-import 'anti_theft_screen.dart';
 import 'dashboard_screen.dart';
 import 'live_map_screen.dart';
 import 'location_disabled_screen.dart';
@@ -25,6 +24,7 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late int _selectedTab;
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
+  StreamSubscription<GeofenceAlert>? _geofenceAlertSub;
   bool _isLocationSheetShowing = false;
 
   @override
@@ -33,6 +33,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     _selectedTab = widget.initialTab;
     WidgetsBinding.instance.addObserver(this);
     _listenForLocationService();
+    _listenForGeofenceAlerts();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkLocationServiceStatus();
     });
@@ -41,8 +42,49 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     _serviceStatusSub?.cancel();
+    _geofenceAlertSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  void _listenForGeofenceAlerts() {
+    _geofenceAlertSub = GeofenceService().alertStream.listen((alert) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                alert.isEntry ? Icons.login_rounded : Icons.logout_rounded,
+                color: Colors.white,
+                size: 20,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      alert.title,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    Text(
+                      alert.message,
+                      style: const TextStyle(fontSize: 11.5),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: alert.isEntry ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    });
   }
 
   void _listenForLocationService() {
@@ -93,10 +135,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([NotificationService(), antiTheftService]),
+      animation: NotificationService(),
       builder: (context, _) {
         final unreadCount = NotificationService().unreadCount;
-        final isAlarmActive = antiTheftService.isAlarmActive;
 
         return PopScope(
           canPop: false,
@@ -173,57 +214,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 const SizedBox(width: 8),
               ],
             ),
-            body: Column(
+            body: IndexedStack(
+              index: _selectedTab,
               children: [
-                if (isAlarmActive)
-                  InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AntiTheftScreen()),
-                      );
-                    },
-                    child: Container(
-                      width: double.infinity,
-                      color: AppColors.danger,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 22),
-                          const SizedBox(width: 10),
-                          const Expanded(
-                            child: Text(
-                              '🚨 THEFT ALARM! Vehicle moved.',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          TextButton(
-                            style: TextButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: AppColors.danger,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              minimumSize: const Size(60, 28),
-                            ),
-                            onPressed: () => antiTheftService.silenceAlarm(),
-                            child: const Text('Silence', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 11)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                Expanded(
-                  child: IndexedStack(
-                    index: _selectedTab,
-                    children: [
-                      DashboardScreen(onNavigateTab: _switchTab),
-                      LiveMapScreen(isActiveTab: _selectedTab == 1),
-                      const TripHistoryScreen(),
-                      const ProfileScreen(),
-                    ],
-                  ),
-                ),
+                DashboardScreen(onNavigateTab: _switchTab),
+                LiveMapScreen(isActiveTab: _selectedTab == 1),
+                const TripHistoryScreen(),
+                const ProfileScreen(),
               ],
             ),
             bottomNavigationBar: Container(

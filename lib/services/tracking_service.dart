@@ -12,7 +12,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/trip_model.dart';
 import '../models/vehicle_type.dart';
 import '../models/app_notification.dart';
-import 'anti_theft_service.dart';
 import 'auth_service.dart';
 import 'geocoding_service.dart';
 import 'geofence_service.dart';
@@ -154,6 +153,7 @@ class TrackingService extends ChangeNotifier {
   void setCurrentPosition(Position p) {
     _current = p;
     geocodingService.updateFromPosition(p.latitude, p.longitude);
+    GeofenceService().checkLocation(p);
     notifyListeners();
   }
 
@@ -211,6 +211,7 @@ class TrackingService extends ChangeNotifier {
       if (current != null) {
         _current = current;
         geocodingService.updateFromPosition(current.latitude, current.longitude);
+        GeofenceService().checkLocation(current);
         notifyListeners();
         return current;
       }
@@ -416,7 +417,7 @@ class TrackingService extends ChangeNotifier {
 
     _current = p;
     geocodingService.updateFromPosition(p.latitude, p.longitude);
-    antiTheftService.checkPositionForTheft(p);
+    GeofenceService().checkLocation(p);
 
     // Reject coarse cell-tower triangulation fixes (> 250m) from movement path.
     // In-bag or pocket positioning typically maintains 30m - 220m accuracy.
@@ -507,9 +508,6 @@ class TrackingService extends ChangeNotifier {
 
     // Check geofences
     GeofenceService().checkLocation(p);
-
-    // Check Anti-Theft unauthorized movement
-    antiTheftService.checkPositionForTheft(p);
 
     // Speed alert check (> 80 km/h)
     final speedKmh = (p.speed.clamp(0, 999) * 3.6);

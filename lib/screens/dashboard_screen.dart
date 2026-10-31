@@ -2,14 +2,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../core/app_colors.dart';
 import '../models/shared_device_model.dart';
-import '../services/anti_theft_service.dart';
 import '../services/share_service.dart';
 import '../services/tracking_service.dart';
 import '../widgets/pulse_indicator.dart';
 import 'package:geolocator/geolocator.dart';
-import 'anti_theft_screen.dart';
 import 'geofence_screen.dart';
 import 'location_disabled_screen.dart';
+import 'notifications_screen.dart';
 import 'premium_screen.dart';
 import 'share_screen.dart';
 import 'shared_device_map_screen.dart';
@@ -227,179 +226,7 @@ class DashboardScreen extends StatelessWidget {
               ),
             ),
 
-            // Anti-Theft Security Shield Card
-            AnimatedBuilder(
-              animation: antiTheftService,
-              builder: (context, _) {
-                final isArmed = antiTheftService.isArmed;
-                final isAlarm = antiTheftService.isAlarmActive;
-                return Container(
-                  margin: const EdgeInsets.only(top: 14),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  decoration: BoxDecoration(
-                    color: isAlarm ? AppColors.danger : Colors.white,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isAlarm
-                          ? Colors.redAccent
-                          : isArmed
-                              ? const Color(0xFF10B981).withValues(alpha: 0.4)
-                              : AppColors.border,
-                      width: isArmed ? 1.5 : 1.0,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: isAlarm
-                            ? Colors.red.withValues(alpha: 0.3)
-                            : isArmed
-                                ? const Color(0xFF10B981).withValues(alpha: 0.08)
-                                : Colors.black.withValues(alpha: 0.03),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
-                  ),
-                  child: InkWell(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AntiTheftScreen()),
-                      );
-                    },
-                    borderRadius: BorderRadius.circular(16),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: BoxDecoration(
-                            color: isAlarm
-                                ? Colors.white.withValues(alpha: 0.2)
-                                : isArmed
-                                    ? const Color(0xFFE6F9F0)
-                                    : AppColors.tileBackground,
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            isAlarm
-                                ? Icons.warning_rounded
-                                : isArmed
-                                    ? Icons.shield_rounded
-                                    : Icons.shield_outlined,
-                            color: isAlarm
-                                ? Colors.white
-                                : isArmed
-                                    ? const Color(0xFF10B981)
-                                    : AppColors.textSecondary,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Flexible(
-                                    child: Text(
-                                      isAlarm
-                                          ? 'THEFT ALARM'
-                                          : isArmed
-                                              ? 'Anti-Theft Armed'
-                                              : 'Anti-Theft Disarmed',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 13,
-                                        color: isAlarm ? Colors.white : AppColors.navyDark,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: isAlarm
-                                          ? Colors.white.withValues(alpha: 0.3)
-                                          : isArmed
-                                              ? const Color(0xFF10B981).withValues(alpha: 0.15)
-                                              : AppColors.border,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      isArmed ? 'PROTECTED' : 'OFF',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.w800,
-                                        color: isAlarm
-                                            ? Colors.white
-                                            : isArmed
-                                                ? const Color(0xFF047857)
-                                                : AppColors.textSecondary,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                isAlarm
-                                    ? 'Tap to silence siren or cut-off engine'
-                                    : isArmed
-                                        ? 'Guard active (${antiTheftService.movementThresholdMeters.toInt()}m limit)'
-                                        : 'Tap to arm & lock parked location',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: isAlarm ? Colors.white70 : AppColors.textSecondary,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: isAlarm
-                                ? Colors.white
-                                : isArmed
-                                    ? const Color(0xFFEF4444)
-                                    : const Color(0xFF10B981),
-                            foregroundColor: isAlarm ? AppColors.danger : Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            minimumSize: const Size(64, 36),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                            elevation: 0,
-                          ),
-                          onPressed: () {
-                            if (isAlarm) {
-                              antiTheftService.silenceAlarm();
-                            } else if (isArmed) {
-                              antiTheftService.disarmVehicle();
-                            } else {
-                              antiTheftService.armVehicle();
-                            }
-                          },
-                          child: Text(
-                            isAlarm
-                                ? 'Silence'
-                                : isArmed
-                                    ? 'Disarm'
-                                    : 'Arm',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
 
             // 2. 6 Grid Features
             GridView.count(
@@ -427,15 +254,15 @@ class DashboardScreen extends StatelessWidget {
                   onTap: () => onNavigateTab(2), // History tab
                 ),
                 _dashboardGridCard(
-                  icon: Icons.shield_rounded,
+                  icon: Icons.radar_rounded,
                   iconColor: const Color(0xFF10B981),
                   bgColor: const Color(0xFFE6F9F0),
-                  title: 'Anti-Theft',
-                  subtitle: 'Alarm & Siren',
+                  title: 'Geofence',
+                  subtitle: 'Safe zones & alerts',
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const AntiTheftScreen()),
+                      MaterialPageRoute(builder: (_) => const GeofenceScreen()),
                     );
                   },
                 ),
@@ -466,15 +293,15 @@ class DashboardScreen extends StatelessWidget {
                   },
                 ),
                 _dashboardGridCard(
-                  icon: Icons.radar_rounded,
+                  icon: Icons.notifications_active_rounded,
                   iconColor: const Color(0xFFF59E0B),
                   bgColor: const Color(0xFFFEF3C7),
-                  title: 'Geofence',
-                  subtitle: 'Safety alerts',
+                  title: 'Activity Alerts',
+                  subtitle: 'Zone & trip log',
                   onTap: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (_) => const GeofenceScreen()),
+                      MaterialPageRoute(builder: (_) => const NotificationsScreen()),
                     );
                   },
                 ),
