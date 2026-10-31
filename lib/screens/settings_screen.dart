@@ -701,7 +701,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('Speed Unit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          const Expanded(
+                            child: Text('Speed Unit', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          ),
                           DropdownButton<String>(
                             value: _speedUnit,
                             underline: const SizedBox(),
@@ -725,7 +727,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text('GPS Location Accuracy', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          const Expanded(
+                            child: Text('GPS Location Accuracy', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                          ),
                           DropdownButton<String>(
                             value: _gpsAccuracy,
                             underline: const SizedBox(),

@@ -116,7 +116,12 @@ class ShareService extends ChangeNotifier {
 
   /// Real-time stream of all devices/users sharing their live location with the current user
   Stream<List<SharedDeviceModel>> getSharedWithMeStream() {
-    final user = FirebaseAuth.instance.currentUser;
+    User? user;
+    try {
+      user = FirebaseAuth.instance.currentUser;
+    } catch (_) {
+      return Stream.value(<SharedDeviceModel>[]);
+    }
     final myEmail = user?.email?.trim().toLowerCase();
 
     if (myEmail == null || myEmail.isEmpty) {

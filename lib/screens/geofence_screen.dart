@@ -805,15 +805,18 @@ class _GeofenceScreenState extends State<GeofenceScreen> with SingleTickerProvid
                   color: isInside ? AppColors.success : const Color(0xFFD97706),
                 ),
                 const SizedBox(width: 6),
-                Text(
-                  isInside ? 'Status: INSIDE SAFE ZONE' : 'Status: OUTSIDE ZONE',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.bold,
-                    color: isInside ? AppColors.success : const Color(0xFFD97706),
+                Expanded(
+                  child: Text(
+                    isInside ? 'Status: INSIDE SAFE ZONE' : 'Status: OUTSIDE ZONE',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                      color: isInside ? AppColors.success : const Color(0xFFD97706),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const Spacer(),
                 if (distance != null)
                   Text(
                     '${distance.toInt()}m from center',
@@ -833,10 +836,14 @@ class _GeofenceScreenState extends State<GeofenceScreen> with SingleTickerProvid
           Row(
             children: [
               Expanded(
+                flex: 3,
                 child: OutlinedButton.icon(
                   onPressed: () => _focusGeofenceOnMap(g),
-                  icon: const Icon(Icons.map_rounded, size: 15),
-                  label: const Text('View on Map', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  icon: const Icon(Icons.map_rounded, size: 14),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('View on Map', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppColors.primary,
                     side: BorderSide(color: AppColors.primary.withValues(alpha: 0.3)),
@@ -845,22 +852,30 @@ class _GeofenceScreenState extends State<GeofenceScreen> with SingleTickerProvid
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                onPressed: () => _testGeofenceAlert(g),
-                icon: const Icon(Icons.notifications_active_outlined, size: 15),
-                label: const Text('Test Alert', style: TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.navyDark,
-                  side: const BorderSide(color: AppColors.border),
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              const SizedBox(width: 6),
+              Expanded(
+                flex: 2,
+                child: OutlinedButton.icon(
+                  onPressed: () => _testGeofenceAlert(g),
+                  icon: const Icon(Icons.notifications_active_outlined, size: 14),
+                  label: const FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text('Test Alert', style: TextStyle(fontSize: 11.5)),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.navyDark,
+                    side: const BorderSide(color: AppColors.border),
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               IconButton(
                 icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger, size: 20),
                 tooltip: 'Delete Geofence',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 onPressed: () => _confirmDeleteGeofence(g),
               ),
             ],

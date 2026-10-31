@@ -110,16 +110,20 @@ class MapVehicleFilterBar extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                size: 16,
+                size: 15,
                 color: isSelected ? Colors.white : Colors.grey.shade700,
               ),
-              const SizedBox(width: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                  color: isSelected ? Colors.white : Colors.grey.shade700,
+              const SizedBox(width: 3),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                    color: isSelected ? Colors.white : Colors.grey.shade700,
+                  ),
                 ),
               ),
             ],

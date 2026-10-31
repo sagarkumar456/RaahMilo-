@@ -27,11 +27,13 @@ class TrackingService extends ChangeNotifier {
     restoreActiveSession();
     _restoreSelectedVehicle();
     initCurrentLocation();
-    FirebaseAuth.instance.authStateChanges().listen((user) {
-      if (user != null) {
-        syncFirestoreHistory();
-      }
-    });
+    try {
+      FirebaseAuth.instance.authStateChanges().listen((user) {
+        if (user != null) {
+          syncFirestoreHistory();
+        }
+      });
+    } catch (_) {}
   }
 
   StreamSubscription<Position>? _positionSubscription;
