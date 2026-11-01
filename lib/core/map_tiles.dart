@@ -7,6 +7,10 @@ class AppMapTiles {
   static const String streetUrl =
       'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 
+  /// Esri World Street Map (high-speed fallback, zero API key, zero watermarks)
+  static const String streetFallbackUrl =
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
+
   /// ArcGIS World Imagery for satellite view (free, zero API key required)
   static const String satelliteUrl =
       'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
@@ -15,14 +19,18 @@ class AppMapTiles {
   static const String userAgentPackage = 'com.trackmyphone.gps';
 
   /// Factory helper that produces a clean TileLayer with zero watermarks & zero API keys.
-  /// Note: fallbackUrl is omitted intentionally so Flutter's MapNetworkImageProvider
-  /// can fully utilize high-speed RAM image caching for instantaneous panning.
   static TileLayer buildTileLayer({bool isSatellite = false}) {
+    // Mutable headers map to allow NetworkTileProvider internal updates without crash
+    final headers = <String, String>{
+      'User-Agent': 'RaahMiloGPS/1.0 (Android; com.trackmyphone.gps)',
+    };
+
     if (isSatellite) {
       return TileLayer(
         urlTemplate: satelliteUrl,
         userAgentPackageName: userAgentPackage,
         tileProvider: NetworkTileProvider(
+          headers: headers,
           silenceExceptions: true,
         ),
         maxZoom: 19.0,
@@ -37,8 +45,10 @@ class AppMapTiles {
     }
     return TileLayer(
       urlTemplate: streetUrl,
+      fallbackUrl: streetFallbackUrl,
       userAgentPackageName: userAgentPackage,
       tileProvider: NetworkTileProvider(
+        headers: headers,
         silenceExceptions: true,
       ),
       maxZoom: 19.0,

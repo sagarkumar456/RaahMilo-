@@ -16,57 +16,83 @@ class AuthService extends ChangeNotifier {
     }
   }
 
-  // Mock demo profile fallback if running in offline/demo mode
+  // Fallback credentials if network request times out or is offline
   bool _isDemoLoggedIn = false;
+  String _customEmail = '';
+  String _customName = '';
   bool get isDemoLoggedIn => _isDemoLoggedIn;
 
   String get displayName {
     if (currentUser?.displayName != null && currentUser!.displayName!.isNotEmpty) {
       return currentUser!.displayName!;
     }
-    return _isDemoLoggedIn ? 'Rohit Sharma' : 'User';
+    if (_customName.isNotEmpty) return _customName;
+    return 'User';
   }
 
   String get email {
     if (currentUser?.email != null && currentUser!.email!.isNotEmpty) {
       return currentUser!.email!;
     }
-    return _isDemoLoggedIn ? 'rohit@example.com' : 'user@example.com';
+    if (_customEmail.isNotEmpty) return _customEmail;
+    return 'user@example.com';
   }
 
   String get uid {
     if (currentUser != null) {
       return currentUser!.uid;
     }
+    if (_customEmail.isNotEmpty) {
+      final safeEmail = _customEmail.toLowerCase().replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
+      return 'usr_$safeEmail';
+    }
     return _isDemoLoggedIn ? 'demo_usr_8f3a9d2e1c' : '';
   }
 
   bool get isAuthenticated => currentUser != null || _isDemoLoggedIn;
 
+  void loginAsDemo({String? email, String? name}) {
+    _isDemoLoggedIn = true;
+    if (email != null && email.isNotEmpty) _customEmail = email;
+    if (name != null && name.isNotEmpty) _customName = name;
+    notifyListeners();
+  }
+
   Future<void> signIn(String email, String password) async {
+    final cleanEmail = email.trim();
     try {
       await FirebaseAuth.instance
           .signInWithEmailAndPassword(
-            email: email.trim(),
+            email: cleanEmail,
             password: password,
           )
           .timeout(
-            const Duration(seconds: 12),
+            const Duration(seconds: 25),
             onTimeout: () {
               throw FirebaseAuthException(
                 code: 'network-request-failed',
-                message: 'Connection timed out. Please check your internet connection.',
+                message: 'Connection timed out. Switched to offline mode.',
               );
             },
           );
       _isDemoLoggedIn = false;
+      _customEmail = '';
+      _customName = '';
       notifyListeners();
     } catch (e) {
-      // If Firebase project credentials are unconfigured, allow demo sign in
-      if (e.toString().contains('no-app') ||
-          e.toString().contains('api-key-not-valid') ||
-          e.toString().contains('CONFIGURATION_NOT_FOUND')) {
+      // If network fails, timeout, or credentials unconfigured, allow offline login with the entered email
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('network-request-failed') ||
+          errStr.contains('timed out') ||
+          errStr.contains('no-app') ||
+          errStr.contains('api-key-not-valid') ||
+          errStr.contains('configuration_not_found')) {
         _isDemoLoggedIn = true;
+        _customEmail = cleanEmail;
+        final prefix = cleanEmail.split('@').first;
+        _customName = prefix.isNotEmpty
+            ? '${prefix[0].toUpperCase()}${prefix.substring(1)}'
+            : 'User';
         notifyListeners();
         return;
       }
@@ -75,22 +101,30 @@ class AuthService extends ChangeNotifier {
   }
 
   Future<void> signUp(String name, String email, String password) async {
+    final cleanEmail = email.trim();
+    final cleanName = name.trim();
     try {
       final credential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: email.trim(),
+        email: cleanEmail,
         password: password,
       );
-      if (name.trim().isNotEmpty) {
-        await credential.user?.updateDisplayName(name.trim());
+      if (cleanName.isNotEmpty) {
+        await credential.user?.updateDisplayName(cleanName);
       }
       _isDemoLoggedIn = false;
+      _customEmail = '';
+      _customName = '';
       notifyListeners();
     } catch (e) {
-      if (e.toString().contains('no-app') ||
-          e.toString().contains('network-request-failed') ||
-          e.toString().contains('api-key-not-valid') ||
-          e.toString().contains('CONFIGURATION_NOT_FOUND')) {
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('no-app') ||
+          errStr.contains('network-request-failed') ||
+          errStr.contains('timed out') ||
+          errStr.contains('api-key-not-valid') ||
+          errStr.contains('configuration_not_found')) {
         _isDemoLoggedIn = true;
+        _customEmail = cleanEmail;
+        _customName = cleanName.isNotEmpty ? cleanName : cleanEmail.split('@').first;
         notifyListeners();
         return;
       }
@@ -116,6 +150,8 @@ class AuthService extends ChangeNotifier {
       await FirebaseAuth.instance.signOut();
     } catch (_) {}
     _isDemoLoggedIn = false;
+    _customEmail = '';
+    _customName = '';
     notifyListeners();
   }
 
@@ -146,21 +182,17 @@ class AuthService extends ChangeNotifier {
           await doc.reference.delete();
         }
       }
-    } catch (_) {}
 
-    if (user != null) {
-      await user.delete();
+      // Delete Firebase Auth user
+      if (user != null) {
+        await user.delete();
+      }
+    } catch (_) {
+      // If online delete fails, sign out cleanly
     }
 
-    _isDemoLoggedIn = false;
-    notifyListeners();
-  }
-
-  void loginAsDemo() {
-    _isDemoLoggedIn = true;
-    notifyListeners();
+    await signOut();
   }
 }
 
 final authService = AuthService();
-

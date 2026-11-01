@@ -13,6 +13,26 @@ class PermissionScreen extends StatefulWidget {
 class _PermissionScreenState extends State<PermissionScreen> {
   bool _requesting = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _checkIfAlreadyGranted();
+  }
+
+  Future<void> _checkIfAlreadyGranted() async {
+    try {
+      final permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+        if (!mounted) return;
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeShell()),
+          (route) => false,
+        );
+      }
+    } catch (_) {}
+  }
+
   Future<void> _requestLocationPermission() async {
     setState(() => _requesting = true);
     try {

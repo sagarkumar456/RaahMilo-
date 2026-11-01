@@ -42,6 +42,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   bool _isSheetCollapsed = false;
   bool _isAutoFollowEnabled = true;
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
+  Timer? _mapReadyTimer;
 
   // Selected date defaults to today so today's path & location show automatically
   DateTime _selectedDate = DateTime.now();
@@ -152,8 +153,12 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     trackingService.addListener(_onTrackingUpdate);
     _checkLocationServiceStatus();
 
-    // Preload history
-    trackingService.loadHistory();
+    // Preload history safely after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        trackingService.loadHistory();
+      }
+    });
   }
 
   @override
@@ -230,6 +235,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
 
   @override
   void dispose() {
+    _mapReadyTimer?.cancel();
     trackingService.removeListener(_onTrackingUpdate);
     _passivePositionSub?.cancel();
     _markerMoveController?.dispose();
@@ -959,10 +965,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                       if (mounted) {
                         setState(() => _isMapReady = true);
                         _initDeviceLocation();
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          Future.delayed(const Duration(milliseconds: 100), () {
-                            if (mounted) _refreshMapAndLocation();
-                          });
+                        _mapReadyTimer?.cancel();
+                        _mapReadyTimer = Timer(const Duration(milliseconds: 100), () {
+                          if (mounted) _refreshMapAndLocation();
                         });
                       }
                     },

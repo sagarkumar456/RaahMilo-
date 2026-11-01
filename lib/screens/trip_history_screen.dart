@@ -25,7 +25,11 @@ class _TripHistoryScreenState extends State<TripHistoryScreen> {
   @override
   void initState() {
     super.initState();
-    trackingService.loadHistory();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        trackingService.loadHistory();
+      }
+    });
   }
 
   List<TripModel> _filterTrips(List<TripModel> allTrips) {

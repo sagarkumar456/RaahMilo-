@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../core/app_colors.dart';
 import '../services/auth_service.dart';
 import '../services/tracking_service.dart';
 import '../widgets/social_auth_button.dart';
+import 'home_shell.dart';
 import 'login_screen.dart';
 import 'permission_screen.dart';
 
@@ -66,10 +68,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
       await authService.signUp(name, email, password);
       await trackingService.loadHistory();
       if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const PermissionScreen()),
-      );
+      await _proceedAfterAuth();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -79,6 +78,26 @@ class _SignUpScreenState extends State<SignUpScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _proceedAfterAuth() async {
+    try {
+      final perm = await Geolocator.checkPermission();
+      if (perm == LocationPermission.always || perm == LocationPermission.whileInUse) {
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const HomeShell()),
+        );
+        return;
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const PermissionScreen()),
+    );
   }
 
   @override
@@ -259,12 +278,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
               const SizedBox(height: 20),
               // Google Button
               SocialAuthButton.google(
-                onTap: () {
+                onTap: () async {
                   authService.loginAsDemo();
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (_) => const PermissionScreen()),
-                  );
+                  await _proceedAfterAuth();
                 },
               ),
               const SizedBox(height: 26),

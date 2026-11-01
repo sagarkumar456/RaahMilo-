@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
@@ -23,6 +24,19 @@ class TrackingService extends ChangeNotifier {
   factory TrackingService() => _instance;
 
   String? _lastUserUid;
+
+  @override
+  void notifyListeners() {
+    final binding = WidgetsBinding.instance;
+    final phase = binding.schedulerPhase;
+    if (phase == SchedulerPhase.idle || phase == SchedulerPhase.postFrameCallbacks) {
+      super.notifyListeners();
+    } else {
+      binding.addPostFrameCallback((_) {
+        super.notifyListeners();
+      });
+    }
+  }
 
   TrackingService._internal() {
     _lastUserUid = authService.uid.isNotEmpty ? authService.uid : null;
