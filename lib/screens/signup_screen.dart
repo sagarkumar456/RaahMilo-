@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../core/app_colors.dart';
 import '../services/auth_service.dart';
+import '../services/tracking_service.dart';
 import '../widgets/social_auth_button.dart';
 import 'login_screen.dart';
 import 'permission_screen.dart';
@@ -63,6 +64,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     try {
       await authService.signUp(name, email, password);
+      await trackingService.loadHistory();
       if (!mounted) return;
       Navigator.pushReplacement(
         context,

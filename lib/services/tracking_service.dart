@@ -22,18 +22,83 @@ class TrackingService extends ChangeNotifier {
   static final TrackingService _instance = TrackingService._internal();
   factory TrackingService() => _instance;
 
+  String? _lastUserUid;
+
   TrackingService._internal() {
+    _lastUserUid = authService.uid.isNotEmpty ? authService.uid : null;
     loadHistory();
     restoreActiveSession();
     _restoreSelectedVehicle();
     initCurrentLocation();
+    _setupAuthListener();
+  }
+
+  void _setupAuthListener() {
     try {
       FirebaseAuth.instance.authStateChanges().listen((user) {
-        if (user != null) {
-          syncFirestoreHistory();
-        }
+        _handleAuthChange(user?.uid);
       });
     } catch (_) {}
+
+    try {
+      authService.addListener(() {
+        final currentUid = authService.uid;
+        _handleAuthChange(currentUid.isNotEmpty ? currentUid : null);
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _handleAuthChange(String? newUid) async {
+    // If the UID hasn't changed, no need to reset
+    if (newUid == _lastUserUid) {
+      if (newUid != null && newUid.isNotEmpty) {
+        syncFirestoreHistory();
+      }
+      return;
+    }
+
+    final oldUid = _lastUserUid;
+    _lastUserUid = newUid;
+
+    // 1. Save old user's local history before switching
+    if (oldUid != null && oldUid.isNotEmpty) {
+      await _saveLocalHistoryForUser(oldUid);
+    }
+
+    // 2. Clear current in-memory trips so no data leaks to another account
+    _historyTrips.clear();
+
+    if (_active) {
+      await stop();
+    }
+    _points.clear();
+    _tripPoints.clear();
+    _meters = 0.0;
+    _tripId = null;
+    _began = null;
+    notifyListeners();
+
+    // 3. If a user is now logged in, load their scoped trips and sync from cloud
+    if (newUid != null && newUid.isNotEmpty) {
+      await loadHistory();
+      await restoreActiveSession();
+      await syncFirestoreHistory();
+    }
+  }
+
+  Future<void> onUserSignOut() async {
+    final uid = authService.uid;
+    if (uid.isNotEmpty) {
+      await _saveLocalHistoryForUser(uid);
+    }
+    _historyTrips.clear();
+    _points.clear();
+    _tripPoints.clear();
+    _meters = 0.0;
+    _tripId = null;
+    _began = null;
+    _lastUserUid = null;
+    notifyListeners();
   }
 
   StreamSubscription<Position>? _positionSubscription;
@@ -90,8 +155,10 @@ class TrackingService extends ChangeNotifier {
   void setVehicleType(VehicleType type) {
     if (_currentVehicle == type) return;
     _currentVehicle = type;
+    final uid = authService.uid;
+    final key = uid.isNotEmpty ? 'selected_vehicle_type_$uid' : 'selected_vehicle_type';
     SharedPreferences.getInstance().then((prefs) {
-      prefs.setString('selected_vehicle_type', type.name);
+      prefs.setString(key, type.name);
     });
     notifyListeners();
   }
@@ -99,7 +166,9 @@ class TrackingService extends ChangeNotifier {
   Future<void> _restoreSelectedVehicle() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString('selected_vehicle_type');
+      final uid = authService.uid;
+      final key = uid.isNotEmpty ? 'selected_vehicle_type_$uid' : 'selected_vehicle_type';
+      final saved = prefs.getString(key) ?? prefs.getString('selected_vehicle_type');
       if (saved != null) {
         _currentVehicle = VehicleType.fromString(saved);
         notifyListeners();
@@ -315,6 +384,7 @@ class TrackingService extends ChangeNotifier {
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setBool('is_tracking_active', true);
+        await prefs.setString('active_trip_user_id', authService.uid);
         await prefs.setString('active_trip_id', _tripId!);
         await prefs.setString('active_trip_began', _began!.toIso8601String());
         await prefs.setDouble('active_trip_meters', 0.0);
@@ -633,9 +703,18 @@ class TrackingService extends ChangeNotifier {
 
   Future<void> restoreActiveSession() async {
     try {
+      final uid = authService.uid;
+      if (uid.isEmpty) return;
+
       final prefs = await SharedPreferences.getInstance();
       final isActive = prefs.getBool('is_tracking_active') ?? false;
       if (!isActive) return;
+
+      final activeUserId = prefs.getString('active_trip_user_id');
+      if (activeUserId != null && activeUserId.isNotEmpty && activeUserId != uid) {
+        // Active tracking session belongs to another account, do not restore for current user
+        return;
+      }
 
       final savedTripId = prefs.getString('active_trip_id');
       final beganStr = prefs.getString('active_trip_began');
@@ -848,6 +927,7 @@ class TrackingService extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('is_tracking_active');
+      await prefs.remove('active_trip_user_id');
       await prefs.remove('active_trip_id');
       await prefs.remove('active_trip_began');
       await prefs.remove('active_trip_meters');
@@ -895,17 +975,62 @@ class TrackingService extends ChangeNotifier {
     notifyListeners();
   }
 
+  String _getHistoryStorageKey(String uid) => 'saved_history_trips_$uid';
+
   Future<void> loadHistory() async {
     try {
+      final uid = authService.uid;
+      if (uid.isEmpty) {
+        _historyTrips.clear();
+        notifyListeners();
+        return;
+      }
+
       final prefs = await SharedPreferences.getInstance();
-      final jsonStr = prefs.getString('saved_history_trips');
+      final userKey = _getHistoryStorageKey(uid);
+      String? jsonStr = prefs.getString(userKey);
+
+      // Legacy migration: If user-specific storage is empty, check legacy global storage
+      if (jsonStr == null || jsonStr.isEmpty) {
+        final legacyJsonStr = prefs.getString('saved_history_trips');
+        if (legacyJsonStr != null && legacyJsonStr.isNotEmpty) {
+          try {
+            final List<dynamic> legacyList = jsonDecode(legacyJsonStr);
+            final userLegacyTrips = <TripModel>[];
+            for (final item in legacyList) {
+              if (item is Map<String, dynamic>) {
+                final trip = TripModel.fromJson(item);
+                // Claim trips matching current UID, empty ownerId, or demo/guest
+                if (trip.ownerId == uid ||
+                    trip.ownerId.isEmpty ||
+                    trip.ownerId.startsWith('demo_') ||
+                    trip.ownerId == 'guest') {
+                  userLegacyTrips.add(trip.copyWith(ownerId: uid));
+                }
+              }
+            }
+            if (userLegacyTrips.isNotEmpty) {
+              jsonStr = jsonEncode(userLegacyTrips.map((t) => t.toJson()).toList());
+              await prefs.setString(userKey, jsonStr);
+            }
+          } catch (e) {
+            debugPrint('Legacy history migration notice: $e');
+          }
+        }
+      }
+
+      _historyTrips.clear();
+
       if (jsonStr != null && jsonStr.isNotEmpty) {
         final List<dynamic> list = jsonDecode(jsonStr);
         final loaded = list
-            .map((item) => TripModel.fromJson(item as Map<String, dynamic>))
+            .whereType<Map<String, dynamic>>()
+            .map((item) => TripModel.fromJson(item))
+            .where((t) => t.ownerId == uid || t.ownerId.isEmpty)
+            .map((t) => t.ownerId.isEmpty ? t.copyWith(ownerId: uid) : t)
             .toList();
 
-        final existingIds = _historyTrips.map((t) => t.id).toSet();
+        final existingIds = <String>{};
         for (final trip in loaded) {
           if (!existingIds.contains(trip.id)) {
             _historyTrips.add(trip);
@@ -945,9 +1070,11 @@ class TrackingService extends ChangeNotifier {
         final data = doc.data();
         if (!existingIds.contains(doc.id)) {
           final firestoreTrip = TripModel.fromFirestore(doc.id, data);
-          _historyTrips.add(firestoreTrip);
-          existingIds.add(doc.id);
-          changed = true;
+          if (firestoreTrip.ownerId == uid || firestoreTrip.ownerId.isEmpty) {
+            _historyTrips.add(firestoreTrip.copyWith(ownerId: uid));
+            existingIds.add(doc.id);
+            changed = true;
+          }
         } else {
           // If already in memory but points were empty, backfill if data has points
           final idx = _historyTrips.indexWhere((t) => t.id == doc.id);
@@ -961,6 +1088,13 @@ class TrackingService extends ChangeNotifier {
             }
           }
         }
+      }
+
+      // Remove any contaminated trips that don't belong to this account
+      final beforeCount = _historyTrips.length;
+      _historyTrips.removeWhere((t) => t.ownerId.isNotEmpty && t.ownerId != uid);
+      if (_historyTrips.length != beforeCount) {
+        changed = true;
       }
 
       if (changed) {
@@ -1036,12 +1170,23 @@ class TrackingService extends ChangeNotifier {
   }
 
   Future<void> _saveLocalHistory() async {
+    final uid = authService.uid;
+    if (uid.isEmpty) return;
+    await _saveLocalHistoryForUser(uid);
+  }
+
+  Future<void> _saveLocalHistoryForUser(String uid) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final jsonList = _historyTrips.map((t) => t.toJson()).toList();
-      await prefs.setString('saved_history_trips', jsonEncode(jsonList));
+      // Only persist trips belonging to this specific user account
+      final userTrips = _historyTrips
+          .where((t) => t.ownerId == uid || t.ownerId.isEmpty)
+          .map((t) => t.ownerId.isEmpty ? t.copyWith(ownerId: uid) : t)
+          .toList();
+      final jsonList = userTrips.map((t) => t.toJson()).toList();
+      await prefs.setString(_getHistoryStorageKey(uid), jsonEncode(jsonList));
     } catch (e) {
-      debugPrint('Error saving local history: $e');
+      debugPrint('Error saving local history for $uid: $e');
     }
   }
 
@@ -1057,6 +1202,7 @@ class TrackingService extends ChangeNotifier {
   }
 
   Future<void> clearAllUserData() async {
+    final uid = authService.uid;
     if (_active) {
       await stop();
     }
@@ -1068,8 +1214,12 @@ class TrackingService extends ChangeNotifier {
     _began = null;
     try {
       final prefs = await SharedPreferences.getInstance();
+      if (uid.isNotEmpty) {
+        await prefs.remove(_getHistoryStorageKey(uid));
+      }
       await prefs.remove('saved_history_trips');
       await prefs.remove('is_tracking_active');
+      await prefs.remove('active_trip_user_id');
       await prefs.remove('active_trip_id');
       await prefs.remove('active_trip_began');
       await prefs.remove('active_trip_meters');

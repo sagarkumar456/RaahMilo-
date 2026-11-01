@@ -250,6 +250,7 @@ class ProfileScreen extends StatelessWidget {
                   if (trackingService.active) {
                     await trackingService.stop();
                   }
+                  await trackingService.onUserSignOut();
                   await authService.signOut();
                   if (context.mounted) {
                     Navigator.pushAndRemoveUntil(

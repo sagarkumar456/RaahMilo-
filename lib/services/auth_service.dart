@@ -38,7 +38,7 @@ class AuthService extends ChangeNotifier {
     if (currentUser != null) {
       return currentUser!.uid;
     }
-    return 'demo_usr_8f3a9d2e1c';
+    return _isDemoLoggedIn ? 'demo_usr_8f3a9d2e1c' : '';
   }
 
   bool get isAuthenticated => currentUser != null || _isDemoLoggedIn;
