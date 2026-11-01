@@ -45,6 +45,7 @@ class TrackingService extends ChangeNotifier {
     _restoreSelectedVehicle();
     initCurrentLocation();
     _setupAuthListener();
+    _initLocationHealthMonitoring();
   }
 
   void _setupAuthListener() {
@@ -144,6 +145,70 @@ class TrackingService extends ChangeNotifier {
 
   bool _starting = false;
   bool get starting => _starting;
+
+  bool _isLocationServiceEnabled = true;
+  bool get isLocationServiceEnabled => _isLocationServiceEnabled;
+
+  bool _hasLocationPermission = true;
+  bool get hasLocationPermission => _hasLocationPermission;
+
+  bool get isGpsReady => _isLocationServiceEnabled && _hasLocationPermission;
+
+  StreamSubscription<ServiceStatus>? _serviceStatusSubscription;
+
+  void cancelLocationHealthMonitoring() {
+    _serviceStatusSubscription?.cancel();
+    _serviceStatusSubscription = null;
+  }
+
+  void _initLocationHealthMonitoring() {
+    cancelLocationHealthMonitoring();
+    try {
+      _serviceStatusSubscription = Geolocator.getServiceStatusStream().listen((status) {
+        final enabled = (status == ServiceStatus.enabled);
+        if (_isLocationServiceEnabled != enabled) {
+          _isLocationServiceEnabled = enabled;
+          notifyListeners();
+        }
+        if (enabled) {
+          checkLocationHealth(autoStart: true);
+        }
+      });
+    } catch (_) {}
+  }
+
+  Future<bool> checkLocationHealth({bool autoStart = true}) async {
+    try {
+      final enabled = await Geolocator.isLocationServiceEnabled();
+      final perm = await Geolocator.checkPermission();
+      final hasPerm = (perm == LocationPermission.always || perm == LocationPermission.whileInUse);
+
+      bool changed = false;
+      if (_isLocationServiceEnabled != enabled) {
+        _isLocationServiceEnabled = enabled;
+        changed = true;
+      }
+      if (_hasLocationPermission != hasPerm) {
+        _hasLocationPermission = hasPerm;
+        changed = true;
+      }
+
+      if (changed) {
+        notifyListeners();
+      }
+
+      if (enabled && hasPerm) {
+        if (!_active && !_starting && autoStart) {
+          start();
+        }
+        return true;
+      } else {
+        return false;
+      }
+    } catch (_) {
+      return false;
+    }
+  }
 
   bool _isBackgroundPermissionGranted = true;
   bool get isBackgroundPermissionGranted => _isBackgroundPermissionGranted;
@@ -340,17 +405,26 @@ class TrackingService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (!await Geolocator.isLocationServiceEnabled()) {
-        throw Exception('Enable location services in your phone settings.');
+      final isServiceEnabled = await Geolocator.isLocationServiceEnabled();
+      _isLocationServiceEnabled = isServiceEnabled;
+      if (!isServiceEnabled) {
+        _lastError = 'Location services disabled in device settings.';
+        _starting = false;
+        notifyListeners();
+        return;
       }
 
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        throw Exception('Location permission is required for live tracking.');
+      final hasPerm = (permission == LocationPermission.always || permission == LocationPermission.whileInUse);
+      _hasLocationPermission = hasPerm;
+      if (!hasPerm) {
+        _lastError = 'Location permission is required for live tracking.';
+        _starting = false;
+        notifyListeners();
+        return;
       }
       _isBackgroundPermissionGranted = (permission == LocationPermission.always);
 
@@ -372,10 +446,18 @@ class TrackingService extends ChangeNotifier {
         }
       });
 
-      // Save initial trip to Firestore if available
-      try {
-        final uid = authService.uid;
-        final ref = await FirebaseFirestore.instance.collection('trips').add({
+      // Quick local trip ID first so active session is never blocked by network latency
+      final localId = 'local_${DateTime.now().millisecondsSinceEpoch}';
+      _tripId = localId;
+
+      _active = true;
+      _starting = false;
+      notifyListeners();
+
+      // Async Firestore trip creation with timeout
+      final uid = authService.uid;
+      if (uid.isNotEmpty) {
+        FirebaseFirestore.instance.collection('trips').add({
           'title': '${_currentVehicle.displayName} Trip at ${DateFormat('hh:mm a').format(_began!)}',
           'ownerId': uid,
           'viewerIds': <String>[],
@@ -385,37 +467,30 @@ class TrackingService extends ChangeNotifier {
           'distanceMeters': 0.0,
           'latest': null,
           'vehicleType': _currentVehicle.name,
-        });
-        _tripId = ref.id;
-      } catch (e) {
-        _tripId = 'local_${DateTime.now().millisecondsSinceEpoch}';
+        }).timeout(const Duration(seconds: 3)).then((ref) {
+          _tripId = ref.id;
+          _saveActiveTripState();
+        }).catchError((_) {});
       }
 
-      _active = true;
-      notifyListeners();
-
       // Persist tracking session to SharedPreferences
-      try {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setBool('is_tracking_active', true);
-        await prefs.setString('active_trip_user_id', authService.uid);
-        await prefs.setString('active_trip_id', _tripId!);
-        await prefs.setString('active_trip_began', _began!.toIso8601String());
-        await prefs.setDouble('active_trip_meters', 0.0);
-        await prefs.remove('active_trip_points');
-      } catch (_) {}
+      _persistInitialActiveSession();
+
+      // Seed with last known or current position immediately if available
+      if (_current != null) {
+        _onPosition(_current!);
+      } else {
+        Geolocator.getLastKnownPosition().then((last) {
+          if (last != null && _tripPoints.isEmpty && _active) {
+            _onPosition(last);
+          }
+        }).catchError((_) {});
+      }
 
       // Reliable background & foreground tracking configuration
       final locationSettings = _createLocationSettings();
 
-      // Initial fix
-      try {
-        final initialPos = await Geolocator.getCurrentPosition(
-          locationSettings: locationSettings,
-        );
-        await _onPosition(initialPos);
-      } catch (_) {}
-
+      _positionSubscription?.cancel();
       _positionSubscription = Geolocator.getPositionStream(
         locationSettings: locationSettings,
       ).listen(
@@ -425,6 +500,21 @@ class TrackingService extends ChangeNotifier {
           notifyListeners();
         },
       );
+
+      // Async non-blocking fresh fix attempt with short timeout
+      Geolocator.getCurrentPosition(
+        locationSettings: defaultTargetPlatform == TargetPlatform.android
+            ? AndroidSettings(
+                accuracy: LocationAccuracy.high,
+                timeLimit: const Duration(seconds: 5),
+              )
+            : const LocationSettings(
+                accuracy: LocationAccuracy.high,
+                timeLimit: Duration(seconds: 5),
+              ),
+      ).then((p) {
+        if (_active) _onPosition(p);
+      }).catchError((_) {});
 
       // Add Notification
       NotificationService().addNotification(
@@ -437,11 +527,22 @@ class TrackingService extends ChangeNotifier {
       if (_tripId != null && _active) {
         await stop();
       }
-      rethrow;
     } finally {
       _starting = false;
       notifyListeners();
     }
+  }
+
+  Future<void> _persistInitialActiveSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('is_tracking_active', true);
+      await prefs.setString('active_trip_user_id', authService.uid);
+      if (_tripId != null) await prefs.setString('active_trip_id', _tripId!);
+      if (_began != null) await prefs.setString('active_trip_began', _began!.toIso8601String());
+      await prefs.setDouble('active_trip_meters', 0.0);
+      await prefs.remove('active_trip_points');
+    } catch (_) {}
   }
 
   /// Evaluates whether a new candidate position [candidate] represents genuine physical movement

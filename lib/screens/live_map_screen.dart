@@ -1720,31 +1720,58 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
               ),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: isActive ? AppColors.successLight : AppColors.inputBackground,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    isActive ? Icons.shield_rounded : Icons.location_off_rounded,
-                    size: 13,
-                    color: isActive ? AppColors.success : AppColors.textMuted,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    isActive ? 'LIVE ON' : 'OFF',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: isActive ? AppColors.success : AppColors.textMuted,
+            Builder(
+              builder: (context) {
+                final isGpsOn = trackingService.isLocationServiceEnabled && trackingService.hasLocationPermission;
+                final isStarting = trackingService.starting;
+                return GestureDetector(
+                  onTap: isGpsOn
+                      ? null
+                      : () {
+                          Navigator.push<bool>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LocationDisabledScreen(),
+                              fullscreenDialog: true,
+                            ),
+                          ).then((res) {
+                            if (res == true) {
+                              trackingService.checkLocationHealth(autoStart: true);
+                            }
+                          });
+                        },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isGpsOn
+                          ? (isActive ? AppColors.successLight : AppColors.primary.withValues(alpha: 0.1))
+                          : AppColors.dangerLight,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isGpsOn
+                              ? (isActive ? Icons.shield_rounded : (isStarting ? Icons.sync_rounded : Icons.shield_outlined))
+                              : Icons.location_off_rounded,
+                          size: 13,
+                          color: isGpsOn ? (isActive ? AppColors.success : AppColors.primary) : AppColors.danger,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          isGpsOn ? (isActive ? 'LIVE ON' : (isStarting ? 'STARTING' : 'LIVE ON')) : 'OFF',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                            color: isGpsOn ? (isActive ? AppColors.success : AppColors.primary) : AppColors.danger,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
             const SizedBox(width: 4),
             IconButton(

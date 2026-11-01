@@ -27,7 +27,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   late int _selectedTab;
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
   StreamSubscription<GeofenceAlert>? _geofenceAlertSub;
+  Timer? _healthTimer;
   bool _isLocationSheetShowing = false;
+  DateTime? _lastPromptTime;
 
   @override
   void initState() {
@@ -36,6 +38,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _listenForLocationService();
     _listenForGeofenceAlerts();
+    _healthTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      if (mounted) {
+        trackingService.checkLocationHealth(autoStart: true);
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkLocationServiceStatus();
     });
@@ -45,6 +52,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void dispose() {
     _serviceStatusSub?.cancel();
     _geofenceAlertSub?.cancel();
+    _healthTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -92,10 +100,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   void _listenForLocationService() {
     _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
+      if (!mounted) return;
       if (status == ServiceStatus.disabled) {
         _showLocationDisabledScreen();
       } else if (status == ServiceStatus.enabled) {
-        _checkLocationServiceStatus();
+        trackingService.checkLocationHealth(autoStart: true);
       }
     });
   }
@@ -107,16 +116,16 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _checkLocationServiceStatus() async {
-    final enabled = await Geolocator.isLocationServiceEnabled();
-    final perm = await Geolocator.checkPermission();
-    final isAllowed = (perm == LocationPermission.always || perm == LocationPermission.whileInUse);
+  Future<void> _checkLocationServiceStatus({bool forcePrompt = false}) async {
+    final isHealthy = await trackingService.checkLocationHealth(autoStart: true);
+    if (!isHealthy && mounted) {
+      final now = DateTime.now();
+      final canPrompt = forcePrompt ||
+          _lastPromptTime == null ||
+          now.difference(_lastPromptTime!).inSeconds >= 20;
 
-    if ((!enabled || !isAllowed) && mounted) {
-      _showLocationDisabledScreen();
-    } else if (enabled && isAllowed) {
-      if (!trackingService.active && !trackingService.starting) {
-        trackingService.start();
+      if (canPrompt) {
+        _showLocationDisabledScreen();
       }
     }
   }
@@ -124,27 +133,42 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void _showLocationDisabledScreen() {
     if (_isLocationSheetShowing || !mounted) return;
     _isLocationSheetShowing = true;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LocationDisabledScreen(
-          onLocationEnabled: () {
-            if (mounted) {
-              if (!trackingService.active && !trackingService.starting) {
-                trackingService.start();
-              }
-              setState(() {});
-            }
-          },
-        ),
-        fullscreenDialog: true,
-      ),
-    ).then((_) {
-      _isLocationSheetShowing = false;
-      if (mounted) {
-        _checkLocationServiceStatus();
-        setState(() {});
+    _lastPromptTime = DateTime.now();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _isLocationSheetShowing = false;
+        return;
       }
+
+      Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const LocationDisabledScreen(),
+          fullscreenDialog: true,
+        ),
+      ).then((result) {
+        _isLocationSheetShowing = false;
+        if (!mounted) return;
+
+        if (result == true) {
+          trackingService.checkLocationHealth(autoStart: true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Row(
+                children: [
+                  Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+                  SizedBox(width: 8),
+                  Text('Location services enabled! Live tracking active.'),
+                ],
+              ),
+              backgroundColor: AppColors.success,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        setState(() {});
+      });
     });
   }
 

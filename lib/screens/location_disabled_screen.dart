@@ -71,20 +71,6 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
     if (nav.canPop()) {
       nav.pop(true);
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-            SizedBox(width: 8),
-            Text('Location services enabled!'),
-          ],
-        ),
-        backgroundColor: AppColors.success,
-        duration: Duration(seconds: 2),
-      ),
-    );
   }
 
   void _safeClose() {

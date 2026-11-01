@@ -28,22 +28,30 @@ class DashboardScreen extends StatelessWidget {
       animation: trackingService,
       builder: (context, _) {
         final isActive = trackingService.active;
+        final isStarting = trackingService.starting;
+        final isGpsOn = trackingService.isLocationServiceEnabled && trackingService.hasLocationPermission;
 
         return ListView(
           padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
           children: [
             // 1. Top Hero Card: Tracking Status & Timer (Auto-tracked, always on)
             GestureDetector(
-              onTap: isActive
-                  ? null
+              onTap: isGpsOn
+                  ? (!isActive
+                      ? () => trackingService.checkLocationHealth(autoStart: true)
+                      : null)
                   : () {
-                      Navigator.push(
+                      Navigator.push<bool>(
                         context,
                         MaterialPageRoute(
                           builder: (_) => const LocationDisabledScreen(),
                           fullscreenDialog: true,
                         ),
-                      );
+                      ).then((res) {
+                        if (res == true) {
+                          trackingService.checkLocationHealth(autoStart: true);
+                        }
+                      });
                     },
               child: Container(
                 padding: const EdgeInsets.all(20),
@@ -51,12 +59,14 @@ class DashboardScreen extends StatelessWidget {
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
-                    color: isActive ? AppColors.success.withValues(alpha: 0.3) : AppColors.danger.withValues(alpha: 0.3),
-                    width: isActive ? 1.5 : 1.2,
+                    color: isGpsOn
+                        ? AppColors.success.withValues(alpha: 0.3)
+                        : AppColors.danger.withValues(alpha: 0.3),
+                    width: isGpsOn ? 1.5 : 1.2,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: isActive
+                      color: isGpsOn
                           ? AppColors.success.withValues(alpha: 0.1)
                           : Colors.black.withValues(alpha: 0.04),
                       blurRadius: 16,
@@ -73,8 +83,11 @@ class DashboardScreen extends StatelessWidget {
                         children: [
                           Row(
                             children: [
-                              if (isActive)
-                                const PulseIndicator(size: 10, color: AppColors.success)
+                              if (isGpsOn)
+                                PulseIndicator(
+                                  size: 10,
+                                  color: isActive ? AppColors.success : AppColors.primary,
+                                )
                               else
                                 Container(
                                   width: 10,
@@ -86,22 +99,28 @@ class DashboardScreen extends StatelessWidget {
                                 ),
                               const SizedBox(width: 8),
                               Text(
-                                'Tracking',
+                                isGpsOn
+                                    ? (isActive ? 'Tracking' : (isStarting ? 'Connecting GPS' : 'Tracking Ready'))
+                                    : 'Location Off',
                                 style: TextStyle(
                                   fontSize: 17,
                                   fontWeight: FontWeight.bold,
-                                  color: isActive ? AppColors.textPrimary : AppColors.danger,
+                                  color: isGpsOn ? AppColors.textPrimary : AppColors.danger,
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            isActive ? 'Continuous live tracking active' : 'Location off • Tap to enable in Settings',
+                            isGpsOn
+                                ? (isActive
+                                    ? 'Continuous live tracking active'
+                                    : (isStarting ? 'Acquiring GPS signal...' : 'Live tracking ready • Always on'))
+                                : 'Location off • Tap to enable in Settings',
                             style: TextStyle(
                               fontSize: 13,
-                              color: isActive ? AppColors.textSecondary : AppColors.danger,
-                              fontWeight: isActive ? FontWeight.normal : FontWeight.w600,
+                              color: isGpsOn ? AppColors.textSecondary : AppColors.danger,
+                              fontWeight: isGpsOn ? FontWeight.normal : FontWeight.w600,
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -121,11 +140,15 @@ class DashboardScreen extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isActive ? AppColors.successLight : AppColors.dangerLight,
+                        color: isGpsOn
+                            ? (isActive ? AppColors.successLight : AppColors.primary.withValues(alpha: 0.1))
+                            : AppColors.dangerLight,
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                          color: isActive
-                              ? AppColors.success.withValues(alpha: 0.4)
+                          color: isGpsOn
+                              ? (isActive
+                                  ? AppColors.success.withValues(alpha: 0.4)
+                                  : AppColors.primary.withValues(alpha: 0.4))
                               : AppColors.danger.withValues(alpha: 0.4),
                           width: 1.2,
                         ),
@@ -134,18 +157,26 @@ class DashboardScreen extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            isActive ? Icons.shield_rounded : Icons.location_off_rounded,
+                            isGpsOn
+                                ? (isActive ? Icons.shield_rounded : (isStarting ? Icons.sync_rounded : Icons.shield_outlined))
+                                : Icons.location_off_rounded,
                             size: 16,
-                            color: isActive ? AppColors.success : AppColors.danger,
+                            color: isGpsOn
+                                ? (isActive ? AppColors.success : AppColors.primary)
+                                : AppColors.danger,
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            isActive ? 'ALWAYS ON' : 'LOCATION OFF',
+                            isGpsOn
+                                ? (isActive ? 'ALWAYS ON' : (isStarting ? 'STARTING' : 'ALWAYS ON'))
+                                : 'LOCATION OFF',
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0.4,
-                              color: isActive ? AppColors.success : AppColors.danger,
+                              color: isGpsOn
+                                  ? (isActive ? AppColors.success : AppColors.primary)
+                                  : AppColors.danger,
                             ),
                           ),
                         ],
