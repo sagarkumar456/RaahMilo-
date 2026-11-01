@@ -54,7 +54,7 @@ class DashboardScreen extends StatelessWidget {
                       });
                     },
               child: Container(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(20),
@@ -110,7 +110,7 @@ class DashboardScreen extends StatelessWidget {
                               ),
                             ],
                           ),
-                          const SizedBox(height: 6),
+                          const SizedBox(height: 5),
                           Text(
                             isGpsOn
                                 ? (isActive
@@ -123,19 +123,10 @@ class DashboardScreen extends StatelessWidget {
                               fontWeight: isGpsOn ? FontWeight.normal : FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            isActive ? trackingService.formattedTimer : '00:00:00',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.0,
-                              color: isActive ? AppColors.navyDark : AppColors.textMuted,
-                            ),
-                          ),
                         ],
                       ),
                     ),
+                    const SizedBox(width: 12),
                     // Auto-Tracking "ALWAYS ON" status badge
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
