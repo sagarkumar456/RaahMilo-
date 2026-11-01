@@ -31,6 +31,14 @@ class DashboardScreen extends StatelessWidget {
         final isStarting = trackingService.starting;
         final isGpsOn = trackingService.isLocationServiceEnabled && trackingService.hasLocationPermission;
 
+        if (isGpsOn && !isActive && !isStarting) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!trackingService.active && !trackingService.starting) {
+              trackingService.start();
+            }
+          });
+        }
+
         return ListView(
           padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
           children: [

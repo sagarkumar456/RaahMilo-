@@ -488,18 +488,39 @@ class TrackingService extends ChangeNotifier {
       }
 
       // Reliable background & foreground tracking configuration
-      final locationSettings = _createLocationSettings();
-
       _positionSubscription?.cancel();
-      _positionSubscription = Geolocator.getPositionStream(
-        locationSettings: locationSettings,
-      ).listen(
-        (p) => _onPosition(p),
-        onError: (Object e) {
-          _lastError = e.toString();
-          notifyListeners();
-        },
-      );
+      try {
+        final locationSettings = _createLocationSettings();
+        _positionSubscription = Geolocator.getPositionStream(
+          locationSettings: locationSettings,
+        ).listen(
+          (p) => _onPosition(p),
+          onError: (Object e) {
+            _lastError = e.toString();
+            debugPrint('Position stream error: $e');
+            notifyListeners();
+          },
+        );
+      } catch (streamError) {
+        debugPrint('AndroidSettings failed ($streamError), falling back to standard LocationSettings');
+        try {
+          _positionSubscription = Geolocator.getPositionStream(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 0,
+            ),
+          ).listen(
+            (p) => _onPosition(p),
+            onError: (Object e) {
+              _lastError = e.toString();
+              debugPrint('Standard position stream error: $e');
+              notifyListeners();
+            },
+          );
+        } catch (fallbackError) {
+          debugPrint('Standard stream also failed: $fallbackError');
+        }
+      }
 
       // Async non-blocking fresh fix attempt with short timeout
       Geolocator.getCurrentPosition(
@@ -524,9 +545,7 @@ class TrackingService extends ChangeNotifier {
       );
     } catch (e) {
       _lastError = '$e';
-      if (_tripId != null && _active) {
-        await stop();
-      }
+      debugPrint('Error starting tracking: $e');
     } finally {
       _starting = false;
       notifyListeners();
