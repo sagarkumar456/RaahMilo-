@@ -45,16 +45,25 @@ class AuthService extends ChangeNotifier {
 
   Future<void> signIn(String email, String password) async {
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: email.trim(),
-        password: password,
-      );
+      await FirebaseAuth.instance
+          .signInWithEmailAndPassword(
+            email: email.trim(),
+            password: password,
+          )
+          .timeout(
+            const Duration(seconds: 12),
+            onTimeout: () {
+              throw FirebaseAuthException(
+                code: 'network-request-failed',
+                message: 'Connection timed out. Please check your internet connection.',
+              );
+            },
+          );
       _isDemoLoggedIn = false;
       notifyListeners();
     } catch (e) {
-      // If Firebase project credentials are unconfigured or offline, allow demo sign in
+      // If Firebase project credentials are unconfigured, allow demo sign in
       if (e.toString().contains('no-app') ||
-          e.toString().contains('network-request-failed') ||
           e.toString().contains('api-key-not-valid') ||
           e.toString().contains('CONFIGURATION_NOT_FOUND')) {
         _isDemoLoggedIn = true;

@@ -1045,7 +1045,8 @@ class TrackingService extends ChangeNotifier {
       await _saveLocalHistory();
       notifyListeners();
 
-      await syncFirestoreHistory();
+      // Sync cloud trips in background without delaying login or app load
+      unawaited(syncFirestoreHistory());
     } catch (e) {
       debugPrint('Error loading history: $e');
     }
@@ -1059,7 +1060,8 @@ class TrackingService extends ChangeNotifier {
       final snapshot = await FirebaseFirestore.instance
           .collection('trips')
           .where('ownerId', isEqualTo: uid)
-          .get();
+          .get()
+          .timeout(const Duration(seconds: 6));
 
       final existingIds = _historyTrips.map((t) => t.id).toSet();
       bool changed = false;

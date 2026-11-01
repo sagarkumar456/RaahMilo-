@@ -14,8 +14,8 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController(text: 'rohit@example.com');
-  final _passwordController = TextEditingController(text: 'password123');
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
 
@@ -41,6 +41,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       await authService.signIn(email, password);
+      // Fast non-blocking local history load
       await trackingService.loadHistory();
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
@@ -50,8 +51,28 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } catch (e) {
       if (mounted) {
+        String msg = 'Login failed';
+        final errStr = e.toString().toLowerCase();
+        if (errStr.contains('user-not-found')) {
+          msg = 'No account found with this email.';
+        } else if (errStr.contains('wrong-password') || errStr.contains('invalid-credential')) {
+          msg = 'Incorrect password or email. Please check your credentials.';
+        } else if (errStr.contains('invalid-email')) {
+          msg = 'Invalid email address format.';
+        } else if (errStr.contains('too-many-requests')) {
+          msg = 'Too many attempts. Please try again in a few minutes.';
+        } else if (errStr.contains('network-request-failed') || errStr.contains('timed out')) {
+          msg = 'Network connection timed out. Please check your internet connection.';
+        } else {
+          msg = e.toString().replaceAll('Exception:', '').replaceAll(RegExp(r'\[.*?\]'), '').trim();
+          if (msg.isEmpty) msg = 'Login failed. Please check your credentials.';
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login failed: $e')),
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: AppColors.danger,
+          ),
         );
       }
     } finally {
