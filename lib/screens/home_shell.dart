@@ -28,8 +28,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
   StreamSubscription<GeofenceAlert>? _geofenceAlertSub;
   Timer? _healthTimer;
-  bool _isLocationSheetShowing = false;
-  DateTime? _lastPromptTime;
 
   @override
   void initState() {
@@ -44,7 +42,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkLocationServiceStatus();
+      trackingService.checkLocationHealth(autoStart: true);
     });
   }
 
@@ -101,75 +99,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void _listenForLocationService() {
     _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
       if (!mounted) return;
-      if (status == ServiceStatus.disabled) {
-        _showLocationDisabledScreen();
-      } else if (status == ServiceStatus.enabled) {
-        trackingService.checkLocationHealth(autoStart: true);
-      }
+      trackingService.checkLocationHealth(autoStart: status == ServiceStatus.enabled);
     });
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _checkLocationServiceStatus();
+      trackingService.checkLocationHealth(autoStart: true);
     }
-  }
-
-  Future<void> _checkLocationServiceStatus({bool forcePrompt = false}) async {
-    final isHealthy = await trackingService.checkLocationHealth(autoStart: true);
-    if (!isHealthy && mounted) {
-      final now = DateTime.now();
-      final canPrompt = forcePrompt ||
-          _lastPromptTime == null ||
-          now.difference(_lastPromptTime!).inSeconds >= 20;
-
-      if (canPrompt) {
-        _showLocationDisabledScreen();
-      }
-    }
-  }
-
-  void _showLocationDisabledScreen() {
-    if (_isLocationSheetShowing || !mounted) return;
-    _isLocationSheetShowing = true;
-    _lastPromptTime = DateTime.now();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        _isLocationSheetShowing = false;
-        return;
-      }
-
-      Navigator.push<bool>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const LocationDisabledScreen(),
-          fullscreenDialog: true,
-        ),
-      ).then((result) {
-        _isLocationSheetShowing = false;
-        if (!mounted) return;
-
-        if (result == true) {
-          trackingService.checkLocationHealth(autoStart: true);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                  SizedBox(width: 8),
-                  Text('Location services enabled! Live tracking active.'),
-                ],
-              ),
-              backgroundColor: AppColors.success,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-        setState(() {});
-      });
-    });
   }
 
   void _switchTab(int index) {
@@ -258,13 +196,79 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 const SizedBox(width: 8),
               ],
             ),
-            body: IndexedStack(
-              index: _selectedTab,
+            body: Column(
               children: [
-                DashboardScreen(onNavigateTab: _switchTab),
-                LiveMapScreen(isActiveTab: _selectedTab == 1),
-                const TripHistoryScreen(),
-                const ProfileScreen(),
+                AnimatedBuilder(
+                  animation: trackingService,
+                  builder: (context, _) {
+                    final isGpsOn = trackingService.isLocationServiceEnabled && trackingService.hasLocationPermission;
+                    if (isGpsOn) return const SizedBox.shrink();
+
+                    return Material(
+                      color: AppColors.danger,
+                      child: InkWell(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const LocationDisabledScreen(),
+                              fullscreenDialog: true,
+                            ),
+                          ).then((res) {
+                            if (res == true) {
+                              trackingService.checkLocationHealth(autoStart: true);
+                            }
+                          });
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.location_off_rounded, color: Colors.white, size: 18),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  'Location is disabled. Tap to enable live tracking.',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'Enable',
+                                  style: TextStyle(
+                                    color: AppColors.danger,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                Expanded(
+                  child: IndexedStack(
+                    index: _selectedTab,
+                    children: [
+                      DashboardScreen(onNavigateTab: _switchTab),
+                      LiveMapScreen(isActiveTab: _selectedTab == 1),
+                      const TripHistoryScreen(),
+                      const ProfileScreen(),
+                    ],
+                  ),
+                ),
               ],
             ),
             bottomNavigationBar: Container(

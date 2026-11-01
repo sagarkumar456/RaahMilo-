@@ -527,16 +527,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         final pos = trackingService.current;
         final currentCoord = pos != null ? ll.LatLng(pos.latitude, pos.longitude) : _defaultCoord;
         final isActive = trackingService.active;
-        final isStarting = trackingService.starting;
-        final isGpsOn = trackingService.isLocationServiceEnabled && trackingService.hasLocationPermission;
-
-        if (isGpsOn && !isActive && !isStarting) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!trackingService.active && !trackingService.starting) {
-              trackingService.start();
-            }
-          });
-        }
         final currentVehicle = trackingService.currentVehicle;
 
         final List<ll.LatLng> liveRoutePoints = trackingService.points
