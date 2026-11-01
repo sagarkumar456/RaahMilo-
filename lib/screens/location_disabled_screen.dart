@@ -52,7 +52,9 @@ class _LocationDisabledScreenState extends State<LocationDisabledScreen>
   Future<void> _checkLocationOnResume() async {
     if (_isDismissed || !mounted) return;
     final enabled = await Geolocator.isLocationServiceEnabled();
-    if (enabled && mounted && !_isDismissed) {
+    final perm = await Geolocator.checkPermission();
+    final isAllowed = perm == LocationPermission.always || perm == LocationPermission.whileInUse;
+    if (enabled && isAllowed && mounted && !_isDismissed) {
       _handleLocationRestored();
     }
   }

@@ -6,6 +6,7 @@ import '../core/app_colors.dart';
 import '../services/alert_sound_service.dart';
 import '../services/geofence_service.dart';
 import '../services/notification_service.dart';
+import '../services/tracking_service.dart';
 import 'dashboard_screen.dart';
 import 'live_map_screen.dart';
 import 'location_disabled_screen.dart';
@@ -93,6 +94,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     _serviceStatusSub = Geolocator.getServiceStatusStream().listen((status) {
       if (status == ServiceStatus.disabled) {
         _showLocationDisabledScreen();
+      } else if (status == ServiceStatus.enabled) {
+        _checkLocationServiceStatus();
       }
     });
   }
@@ -106,8 +109,15 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   Future<void> _checkLocationServiceStatus() async {
     final enabled = await Geolocator.isLocationServiceEnabled();
-    if (!enabled && mounted) {
+    final perm = await Geolocator.checkPermission();
+    final isAllowed = (perm == LocationPermission.always || perm == LocationPermission.whileInUse);
+
+    if ((!enabled || !isAllowed) && mounted) {
       _showLocationDisabledScreen();
+    } else if (enabled && isAllowed) {
+      if (!trackingService.active && !trackingService.starting) {
+        trackingService.start();
+      }
     }
   }
 
@@ -119,14 +129,22 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       MaterialPageRoute(
         builder: (_) => LocationDisabledScreen(
           onLocationEnabled: () {
-            if (mounted) setState(() {});
+            if (mounted) {
+              if (!trackingService.active && !trackingService.starting) {
+                trackingService.start();
+              }
+              setState(() {});
+            }
           },
         ),
         fullscreenDialog: true,
       ),
     ).then((_) {
       _isLocationSheetShowing = false;
-      if (mounted) setState(() {});
+      if (mounted) {
+        _checkLocationServiceStatus();
+        setState(() {});
+      }
     });
   }
 

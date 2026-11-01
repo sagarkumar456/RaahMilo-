@@ -519,107 +519,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     }
   }
 
-  Future<void> _toggleTracking(bool isActive) async {
-    try {
-      if (isActive) {
-        await trackingService.stop();
-        if (mounted) {
-          final completedTrip = trackingService.historyTrips.isNotEmpty
-              ? trackingService.historyTrips.first
-              : null;
-          final completedTripId = completedTrip?.id;
-
-          setState(() {
-            _selectedDate = DateTime.now();
-            _selectedSegmentId = completedTripId;
-          });
-
-          final completedPts = (completedTrip != null && completedTrip.points.isNotEmpty)
-              ? completedTrip.points.map((p) => ll.LatLng(p.latitude, p.longitude)).toList()
-              : <ll.LatLng>[];
-
-          if (completedPts.isNotEmpty) {
-            _snapTripsForCurrentDate();
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _fitRouteBounds(completedPts);
-            });
-          }
-
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
-                children: [
-                  Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text('Trip completed & saved! Route is displayed on map.'),
-                  ),
-                ],
-              ),
-              backgroundColor: AppColors.success,
-              duration: Duration(seconds: 3),
-            ),
-          );
-        }
-      } else {
-        final isEnabled = await Geolocator.isLocationServiceEnabled();
-        if (!isEnabled) {
-          if (mounted) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const LocationDisabledScreen(),
-                fullscreenDialog: true,
-              ),
-            );
-          }
-          return;
-        }
-        setState(() {
-          _selectedDate = DateTime.now();
-          _isAutoFollowEnabled = true;
-        });
-        await trackingService.start();
-        _recenter();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Row(
-                children: [
-                  const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      trackingService.isBackgroundPermissionGranted
-                          ? 'Live tracking started'
-                          : 'Tracking started. For bag/pocket route recording, allow "All the time" location in Settings.',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                ],
-              ),
-              action: trackingService.isBackgroundPermissionGranted
-                  ? null
-                  : SnackBarAction(
-                      label: 'Settings',
-                      textColor: Colors.amberAccent,
-                      onPressed: () => Geolocator.openAppSettings(),
-                    ),
-              backgroundColor: AppColors.primary,
-              duration: Duration(seconds: trackingService.isBackgroundPermissionGranted ? 2 : 4),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -1615,15 +1514,16 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
           Row(
             children: [
               if (dayTrips.isNotEmpty)
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.play_circle_outline_rounded, size: 18),
-                    label: const Text('View Trip'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: const BorderSide(color: AppColors.primary, width: 1.2),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
+                    label: const Text('View Trip Details & Playback'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 13),
                     ),
                     onPressed: () {
                       Navigator.push(
@@ -1635,20 +1535,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                     },
                   ),
                 ),
-              if (dayTrips.isNotEmpty) const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.play_arrow_rounded, size: 20),
-                  label: const Text('Start Tracking'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: () => _toggleTracking(false),
-                ),
-              ),
             ],
           ),
         ],
@@ -1744,30 +1630,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               onPressed: () => setState(() => _isSheetCollapsed = false),
             ),
-            const SizedBox(width: 6),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                minimumSize: const Size(0, 32),
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                elevation: 0,
-              ),
-              onPressed: () => _toggleTracking(false),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.play_arrow_rounded, size: 16),
-                  SizedBox(width: 2),
-                  Text(
-                    'Track',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                  ),
-                ],
-              ),
-            ),
           ],
         ),
       ),
@@ -1858,37 +1720,30 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
               ),
             ),
             const SizedBox(width: 8),
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () => _toggleTracking(isActive),
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isActive ? AppColors.danger : AppColors.primary,
-                    borderRadius: BorderRadius.circular(16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: isActive ? AppColors.successLight : AppColors.inputBackground,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isActive ? Icons.shield_rounded : Icons.location_off_rounded,
+                    size: 13,
+                    color: isActive ? AppColors.success : AppColors.textMuted,
                   ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isActive ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        isActive ? 'Stop' : 'Start',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                  const SizedBox(width: 4),
+                  Text(
+                    isActive ? 'LIVE ON' : 'OFF',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: isActive ? AppColors.success : AppColors.textMuted,
+                    ),
                   ),
-                ),
+                ],
               ),
             ),
             const SizedBox(width: 4),
@@ -2084,34 +1939,6 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                     ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          ElevatedButton(
-            onPressed: () => _toggleTracking(isActive),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isActive ? AppColors.danger : AppColors.primary,
-              minimumSize: const Size.fromHeight(48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  isActive ? Icons.stop_circle_rounded : Icons.play_arrow_rounded,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  isActive ? 'Stop Tracking' : 'Start Tracking',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
             ),
           ),
         ],

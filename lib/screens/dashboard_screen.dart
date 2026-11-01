@@ -5,7 +5,6 @@ import '../models/shared_device_model.dart';
 import '../services/share_service.dart';
 import '../services/tracking_service.dart';
 import '../widgets/pulse_indicator.dart';
-import 'package:geolocator/geolocator.dart';
 import 'geofence_screen.dart';
 import 'location_disabled_screen.dart';
 import 'notifications_screen.dart';
@@ -29,200 +28,131 @@ class DashboardScreen extends StatelessWidget {
       animation: trackingService,
       builder: (context, _) {
         final isActive = trackingService.active;
-        final isStarting = trackingService.starting;
 
         return ListView(
           padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 16.0),
           children: [
-            // 1. Top Hero Card: Tracking Status & Timer
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isActive ? AppColors.success.withValues(alpha: 0.3) : AppColors.border,
-                  width: isActive ? 1.5 : 1.0,
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: isActive
-                        ? AppColors.success.withValues(alpha: 0.1)
-                        : Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 16,
-                    offset: const Offset(0, 6),
+            // 1. Top Hero Card: Tracking Status & Timer (Auto-tracked, always on)
+            GestureDetector(
+              onTap: isActive
+                  ? null
+                  : () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const LocationDisabledScreen(),
+                          fullscreenDialog: true,
+                        ),
+                      );
+                    },
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isActive ? AppColors.success.withValues(alpha: 0.3) : AppColors.danger.withValues(alpha: 0.3),
+                    width: isActive ? 1.5 : 1.2,
                   ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  // Pulse dot & texts
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            if (isActive)
-                              const PulseIndicator(size: 10, color: AppColors.success)
-                            else
-                              Container(
-                                width: 10,
-                                height: 10,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.textMuted,
-                                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: isActive
+                          ? AppColors.success.withValues(alpha: 0.1)
+                          : Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 16,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    // Pulse dot & texts
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              if (isActive)
+                                const PulseIndicator(size: 10, color: AppColors.success)
+                              else
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.danger,
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Tracking',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.bold,
+                                  color: isActive ? AppColors.textPrimary : AppColors.danger,
                                 ),
                               ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Tracking',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                                color: isActive ? AppColors.textPrimary : AppColors.textSecondary,
-                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            isActive ? 'Continuous live tracking active' : 'Location off • Tap to enable in Settings',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: isActive ? AppColors.textSecondary : AppColors.danger,
+                              fontWeight: isActive ? FontWeight.normal : FontWeight.w600,
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          isActive ? 'Live location active' : 'Tap Start to begin trip',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: AppColors.textSecondary,
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          isActive ? trackingService.formattedTimer : '00:00:00',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.0,
-                            color: isActive ? AppColors.navyDark : AppColors.textMuted,
+                          const SizedBox(height: 8),
+                          Text(
+                            isActive ? trackingService.formattedTimer : '00:00:00',
+                            style: TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.0,
+                              color: isActive ? AppColors.navyDark : AppColors.textMuted,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Action button: Red "Stop" or Green "Start"
-                  SizedBox(
-                    height: 44,
-                    child: ElevatedButton(
-                      onPressed: isStarting
-                          ? null
-                          : () async {
-                              try {
-                                if (isActive) {
-                                  await trackingService.stop();
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Row(
-                                          children: [
-                                            Icon(Icons.stop_circle_rounded, color: Colors.white, size: 20),
-                                            SizedBox(width: 8),
-                                            Text('Live tracking stopped'),
-                                          ],
-                                        ),
-                                        backgroundColor: AppColors.danger,
-                                        duration: Duration(seconds: 2),
-                                      ),
-                                    );
-                                  }
-                                } else {
-                                  final isEnabled = await Geolocator.isLocationServiceEnabled();
-                                  if (!isEnabled) {
-                                    if (context.mounted) {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => const LocationDisabledScreen(),
-                                          fullscreenDialog: true,
-                                        ),
-                                      );
-                                    }
-                                    return;
-                                  }
-                                  await trackingService.start();
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Row(
-                                          children: [
-                                            const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 20),
-                                            const SizedBox(width: 8),
-                                            Expanded(
-                                              child: Text(
-                                                trackingService.isBackgroundPermissionGranted
-                                                    ? 'Live tracking started'
-                                                    : 'Tracking started. For bag/pocket route recording, allow "All the time" location in Settings.',
-                                                style: const TextStyle(fontSize: 12),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                        action: trackingService.isBackgroundPermissionGranted
-                                            ? null
-                                            : SnackBarAction(
-                                                label: 'Settings',
-                                                textColor: Colors.amberAccent,
-                                                onPressed: () => Geolocator.openAppSettings(),
-                                              ),
-                                        backgroundColor: AppColors.success,
-                                        duration: Duration(seconds: trackingService.isBackgroundPermissionGranted ? 2 : 4),
-                                      ),
-                                    );
-                                  }
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  final isEnabled = await Geolocator.isLocationServiceEnabled();
-                                  if (!isEnabled) {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => const LocationDisabledScreen(),
-                                        fullscreenDialog: true,
-                                      ),
-                                    );
-                                  } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text('$e')),
-                                    );
-                                  }
-                                }
-                              }
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isActive ? AppColors.danger : AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 22),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        minimumSize: const Size(80, 44),
+                        ],
                       ),
-                      child: isStarting
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : Text(
-                              isActive ? 'Stop' : 'Start',
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
                     ),
-                  ),
-                ],
+                    // Auto-Tracking "ALWAYS ON" status badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isActive ? AppColors.successLight : AppColors.dangerLight,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isActive
+                              ? AppColors.success.withValues(alpha: 0.4)
+                              : AppColors.danger.withValues(alpha: 0.4),
+                          width: 1.2,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isActive ? Icons.shield_rounded : Icons.location_off_rounded,
+                            size: 16,
+                            color: isActive ? AppColors.success : AppColors.danger,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            isActive ? 'ALWAYS ON' : 'LOCATION OFF',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                              color: isActive ? AppColors.success : AppColors.danger,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
 
