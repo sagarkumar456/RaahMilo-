@@ -10,15 +10,20 @@ import '../core/app_colors.dart';
 import '../core/map_tiles.dart';
 import '../models/stoppage_model.dart';
 import '../models/trip_model.dart';
+import '../models/user_device_model.dart';
 import '../models/vehicle_type.dart';
+import '../services/device_manager_service.dart';
 import '../services/geocoding_service.dart';
 import '../services/road_routing_service.dart';
 import '../services/tracking_service.dart';
 import '../utils/path_arrows.dart';
 import '../utils/trip_direction_helper.dart';
 import '../widgets/animated_dashed_polyline_layer.dart';
+import '../widgets/device_selector_sheet.dart';
+import '../widgets/lost_device_marker_widget.dart';
 import '../widgets/map_calendar_bar.dart';
 import '../widgets/pulse_indicator.dart';
+import '../widgets/remote_device_info_card.dart';
 import '../widgets/stoppage_marker_widget.dart';
 import '../widgets/vehicle_marker_widget.dart';
 import 'location_disabled_screen.dart';
@@ -43,6 +48,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   bool _isAutoFollowEnabled = true;
   StreamSubscription<ServiceStatus>? _serviceStatusSub;
   Timer? _mapReadyTimer;
+  String? _lastTrackedRemoteDeviceId;
 
   // Selected date defaults to today so today's path & location show automatically
   DateTime _selectedDate = DateTime.now();
@@ -359,6 +365,15 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     setState(() {
       _isAutoFollowEnabled = true;
     });
+
+    if (!deviceManagerService.isViewingCurrentDevice) {
+      final remote = deviceManagerService.selectedDevice;
+      if (remote != null && (remote.latitude != 0.0 || remote.longitude != 0.0)) {
+        _animatedMapMove(ll.LatLng(remote.latitude, remote.longitude), 16.5, durationMs: 500);
+        return;
+      }
+    }
+
     final enabled = await Geolocator.isLocationServiceEnabled();
     if (!enabled) {
       if (mounted) {
@@ -522,10 +537,29 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([trackingService, geocodingService]),
+      animation: Listenable.merge([trackingService, geocodingService, deviceManagerService]),
       builder: (context, _) {
+        final isViewingRemote = !deviceManagerService.isViewingCurrentDevice;
+        final remoteDevice = isViewingRemote ? deviceManagerService.selectedDevice : null;
+
+        if (isViewingRemote &&
+            remoteDevice != null &&
+            (remoteDevice.latitude != 0.0 || remoteDevice.longitude != 0.0) &&
+            _isMapReady) {
+          if (_lastTrackedRemoteDeviceId != remoteDevice.id) {
+            _lastTrackedRemoteDeviceId = remoteDevice.id;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _animatedMapMove(ll.LatLng(remoteDevice.latitude, remoteDevice.longitude), 16.5);
+              }
+            });
+          }
+        }
+
         final pos = trackingService.current;
-        final currentCoord = pos != null ? ll.LatLng(pos.latitude, pos.longitude) : _defaultCoord;
+        final currentCoord = (isViewingRemote && remoteDevice != null && (remoteDevice.latitude != 0.0 || remoteDevice.longitude != 0.0))
+            ? ll.LatLng(remoteDevice.latitude, remoteDevice.longitude)
+            : (pos != null ? ll.LatLng(pos.latitude, pos.longitude) : _defaultCoord);
         final isActive = trackingService.active;
         final currentVehicle = trackingService.currentVehicle;
 
@@ -813,24 +847,43 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
           }
         }
 
+        if (isViewingRemote &&
+            remoteDevice != null &&
+            (remoteDevice.latitude != 0.0 || remoteDevice.longitude != 0.0)) {
+          markers.add(
+            Marker(
+              point: ll.LatLng(remoteDevice.latitude, remoteDevice.longitude),
+              width: 90,
+              height: 90,
+              alignment: Alignment.center,
+              child: LostDeviceMarkerWidget(
+                device: remoteDevice,
+                onTap: () {
+                  _animatedMapMove(ll.LatLng(remoteDevice.latitude, remoteDevice.longitude), 17.0);
+                },
+              ),
+            ),
+          );
+        }
+
         final titleText = isToday
             ? (isActive ? 'Live Tracking' : 'Today\'s Route')
             : DateFormat('dd MMM yyyy').format(_selectedDate);
 
         return Scaffold(
           appBar: AppBar(
-            title: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  titleText,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
-                ),
-                const SizedBox(width: 8),
-                _buildVehicleFilterDropdown(currentVehicle),
-              ],
+            title: _buildAppBarTitle(
+              titleText: titleText,
+              currentVehicle: currentVehicle,
+              isViewingRemote: isViewingRemote,
+              remoteDevice: remoteDevice,
             ),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.devices_other_rounded),
+                tooltip: 'Account Devices',
+                onPressed: () => showDeviceSelectorSheet(context),
+              ),
               IconButton(
                 icon: Icon(_isSatellite ? Icons.map_outlined : Icons.layers_outlined),
                 tooltip: _isSatellite ? 'Street Map' : 'Satellite Map',
@@ -838,7 +891,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
               ),
               IconButton(
                 icon: const Icon(Icons.my_location_rounded),
-                tooltip: 'Recenter on My Location',
+                tooltip: isViewingRemote ? 'Recenter on Remote Device' : 'Recenter on My Location',
                 onPressed: _recenter,
               ),
             ],
@@ -900,22 +953,24 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                 ),
               ),
 
-              // 2. Top Floating Date & Trip Navigation Bar (Auto-loaded, 1-tap date and trip switching)
+              // 2. Top Floating Date & Trip Navigation Bar or Remote Mode Banner
               Positioned(
                 top: 12,
                 left: 14,
                 right: 68, // Leave room for right action buttons
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildTopDateBar(isToday),
-                    if (segments.length >= 2 || (segments.isNotEmpty && segments.first.turnaroundPoint != null)) ...[
-                      const SizedBox(height: 6),
-                      _buildTripFilterBar(segments),
-                    ],
-                  ],
-                ),
+                child: isViewingRemote && remoteDevice != null
+                    ? _buildRemoteDeviceTopBanner(remoteDevice)
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildTopDateBar(isToday),
+                          if (segments.length >= 2 || (segments.isNotEmpty && segments.first.turnaroundPoint != null)) ...[
+                            const SizedBox(height: 6),
+                            _buildTripFilterBar(segments),
+                          ],
+                        ],
+                      ),
               ),
 
               // 3. Right Side Action Controls: Calendar + Auto-Follow + Smooth Zoom (+/-)
@@ -1015,54 +1070,216 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                   ),
                 ),
 
-              // 5. Floating Bottom Card (History Day Summary or Live Tracking Card)
+              // 5. Floating Bottom Card (Remote Device Card or History/Live Tracking Card)
               Positioned(
                 bottom: 12,
                 left: 16,
                 right: 16,
-                child: GestureDetector(
-                  onVerticalDragEnd: (details) {
-                    if (details.primaryVelocity != null) {
-                      if (details.primaryVelocity! > 60) {
-                        setState(() => _isSheetCollapsed = true);
-                      } else if (details.primaryVelocity! < -60) {
-                        setState(() => _isSheetCollapsed = false);
-                      }
-                    }
-                  },
-                  onHorizontalDragEnd: (details) {
-                    if (details.primaryVelocity != null && details.primaryVelocity!.abs() > 60) {
-                      setState(() => _isSheetCollapsed = !_isSheetCollapsed);
-                    }
-                  },
-                  child: AnimatedCrossFade(
-                    duration: const Duration(milliseconds: 250),
-                    firstCurve: Curves.easeInOutCubic,
-                    secondCurve: Curves.easeInOutCubic,
-                    crossFadeState: _isSheetCollapsed
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                    firstChild: (!isActive && (dayTrips.isNotEmpty || !isToday))
-                        ? _buildHistoryDaySummaryCard(dayTrips, segments)
-                        : _buildExpandedCard(
-                            isActive: isActive,
-                            speedKmh: speedKmh,
-                            pos: pos,
-                          ),
-                    secondChild: (!isActive && (dayTrips.isNotEmpty || !isToday))
-                        ? _buildCollapsedHistoryCard(dayTrips, segments)
-                        : _buildCollapsedCard(
-                            isActive: isActive,
-                            speedKmh: speedKmh,
-                            pos: pos,
-                          ),
-                  ),
-                ),
+                child: isViewingRemote && remoteDevice != null
+                    ? RemoteDeviceInfoCard(
+                        device: remoteDevice,
+                        onRecenter: _recenter,
+                        onDismiss: () => deviceManagerService.selectDevice(null),
+                      )
+                    : GestureDetector(
+                        onVerticalDragEnd: (details) {
+                          if (details.primaryVelocity != null) {
+                            if (details.primaryVelocity! > 60) {
+                              setState(() => _isSheetCollapsed = true);
+                            } else if (details.primaryVelocity! < -60) {
+                              setState(() => _isSheetCollapsed = false);
+                            }
+                          }
+                        },
+                        onHorizontalDragEnd: (details) {
+                          if (details.primaryVelocity != null && details.primaryVelocity!.abs() > 60) {
+                            setState(() => _isSheetCollapsed = !_isSheetCollapsed);
+                          }
+                        },
+                        child: AnimatedCrossFade(
+                          duration: const Duration(milliseconds: 250),
+                          firstCurve: Curves.easeInOutCubic,
+                          secondCurve: Curves.easeInOutCubic,
+                          crossFadeState: _isSheetCollapsed
+                              ? CrossFadeState.showSecond
+                              : CrossFadeState.showFirst,
+                          firstChild: (!isActive && (dayTrips.isNotEmpty || !isToday))
+                              ? _buildHistoryDaySummaryCard(dayTrips, segments)
+                              : _buildExpandedCard(
+                                  isActive: isActive,
+                                  speedKmh: speedKmh,
+                                  pos: pos,
+                                ),
+                          secondChild: (!isActive && (dayTrips.isNotEmpty || !isToday))
+                              ? _buildCollapsedHistoryCard(dayTrips, segments)
+                              : _buildCollapsedCard(
+                                  isActive: isActive,
+                                  speedKmh: speedKmh,
+                                  pos: pos,
+                                ),
+                        ),
+                      ),
               ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildAppBarTitle({
+    required String titleText,
+    required VehicleType currentVehicle,
+    required bool isViewingRemote,
+    required UserDeviceModel? remoteDevice,
+  }) {
+    if (isViewingRemote && remoteDevice != null) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => showDeviceSelectorSheet(context),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.danger,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text(
+                      'TRACKING',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      remoteDevice.name,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                ],
+              ),
+              Text(
+                remoteDevice.isOnline
+                    ? 'Online Now • Live'
+                    : 'Last active ${remoteDevice.lastSeenFormatted}',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: remoteDevice.isOnline ? AppColors.success : AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: () => showDeviceSelectorSheet(context),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      titleText,
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17),
+                    ),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                  ],
+                ),
+                Text(
+                  deviceManagerService.deviceName.isNotEmpty
+                      ? '${deviceManagerService.deviceName} (This Phone)'
+                      : 'This Phone',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 8),
+            _buildVehicleFilterDropdown(currentVehicle),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRemoteDeviceTopBanner(UserDeviceModel remoteDevice) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.navyDark,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 8,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const PulseIndicator(size: 8, color: AppColors.danger),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Remote Device: ${remoteDevice.name}',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          GestureDetector(
+            onTap: () => deviceManagerService.selectDevice(null),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'Exit',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

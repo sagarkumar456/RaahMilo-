@@ -2,8 +2,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import '../core/app_colors.dart';
 import '../models/shared_device_model.dart';
+import '../services/device_manager_service.dart';
 import '../services/share_service.dart';
 import '../services/tracking_service.dart';
+import '../widgets/device_selector_sheet.dart';
 import '../widgets/pulse_indicator.dart';
 import 'geofence_screen.dart';
 import 'location_disabled_screen.dart';
@@ -25,7 +27,7 @@ class DashboardScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: trackingService,
+      animation: Listenable.merge([trackingService, deviceManagerService]),
       builder: (context, _) {
         final isActive = trackingService.active;
         final isStarting = trackingService.starting;
@@ -262,6 +264,11 @@ class DashboardScreen extends StatelessWidget {
 
             const SizedBox(height: 24),
 
+            // My Account Devices Section (Find My Phone / Multi-Device)
+            _buildMyAccountDevicesSection(context),
+
+            const SizedBox(height: 24),
+
             // Live Shared Devices Section (User A sharing with User B)
             _buildSharedWithMeSection(context),
 
@@ -434,6 +441,364 @@ class DashboardScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildMyAccountDevicesSection(BuildContext context) {
+    final devices = deviceManagerService.devices;
+    final currentDeviceId = deviceManagerService.deviceId;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.devices_other_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'My Devices (Find My Phone)',
+                style: TextStyle(
+                  fontSize: 16.5,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.navyDark,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              onPressed: () => showDeviceSelectorSheet(context),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    devices.isNotEmpty ? '${devices.length} Linked' : 'Manage',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, color: AppColors.primary, size: 18),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (devices.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: AppColors.border),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.02),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.phone_android_rounded,
+                      color: AppColors.primary,
+                      size: 24,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        deviceManagerService.deviceName.isNotEmpty
+                            ? deviceManagerService.deviceName
+                            : 'This Device',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Connected & Ready • Log into other phones to track them',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
+                  onPressed: () => showDeviceSelectorSheet(context),
+                ),
+              ],
+            ),
+          )
+        else
+          Column(
+            children: devices.map((dev) {
+              final isCurrent = dev.id == currentDeviceId;
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: isCurrent
+                        ? AppColors.primary.withValues(alpha: 0.4)
+                        : AppColors.border,
+                    width: isCurrent ? 1.4 : 1.0,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.02),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: dev.isOnline
+                                ? AppColors.primary.withValues(alpha: 0.12)
+                                : Colors.grey.shade100,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            dev.platform == 'iOS'
+                                ? Icons.phone_iphone_rounded
+                                : Icons.phone_android_rounded,
+                            color: dev.isOnline ? AppColors.primary : Colors.grey.shade600,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      dev.name,
+                                      style: const TextStyle(
+                                        fontSize: 14.5,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.navyDark,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isCurrent
+                                          ? AppColors.navyDark
+                                          : AppColors.danger.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      isCurrent ? 'THIS PHONE' : 'REMOTE',
+                                      style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        color: isCurrent ? Colors.white : AppColors.danger,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  if (dev.isOnline) ...[
+                                    const PulseIndicator(size: 7, color: AppColors.success),
+                                    const SizedBox(width: 4),
+                                    const Text(
+                                      'Live Online',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.success,
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    Container(
+                                      width: 7,
+                                      height: 7,
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade400,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Last seen ${dev.lastSeenFormatted}',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                  if (dev.batteryLevel >= 0) ...[
+                                    const Text(' • ', style: TextStyle(color: AppColors.textMuted)),
+                                    Icon(
+                                      dev.batteryLevel > 20
+                                          ? Icons.battery_charging_full_rounded
+                                          : Icons.battery_alert_rounded,
+                                      size: 13,
+                                      color: dev.batteryLevel > 20
+                                          ? AppColors.primary
+                                          : AppColors.danger,
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '${dev.batteryLevel}%',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: dev.batteryLevel > 20
+                                            ? AppColors.textPrimary
+                                            : AppColors.danger,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (dev.address.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on_rounded,
+                            size: 13,
+                            color: AppColors.textMuted,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              dev.address,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: AppColors.textSecondary,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isCurrent ? AppColors.navyDark : AppColors.primary,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                            onPressed: () {
+                              deviceManagerService.selectDevice(isCurrent ? null : dev.id);
+                              onNavigateTab(1);
+                            },
+                            icon: const Icon(Icons.map_rounded, size: 16),
+                            label: Text(
+                              isCurrent ? 'View on Map' : 'Track Lost Phone',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: AppColors.danger),
+                            foregroundColor: AppColors.danger,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          onPressed: () {
+                            deviceManagerService.ringRemoteDevice(dev.id);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Loud alarm triggered on ${dev.name}!'),
+                                backgroundColor: AppColors.danger,
+                                behavior: SnackBarBehavior.floating,
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.notifications_active_rounded, size: 16),
+                          label: const Text(
+                            'Ring',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+      ],
     );
   }
 

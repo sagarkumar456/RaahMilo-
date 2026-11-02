@@ -14,6 +14,7 @@ import '../models/trip_model.dart';
 import '../models/vehicle_type.dart';
 import '../models/app_notification.dart';
 import 'auth_service.dart';
+import 'device_manager_service.dart';
 import 'geocoding_service.dart';
 import 'geofence_service.dart';
 import 'notification_service.dart';
@@ -331,6 +332,15 @@ class TrackingService extends ChangeNotifier {
     _current = p;
     geocodingService.updateFromPosition(p.latitude, p.longitude);
     GeofenceService().checkLocation(p);
+
+    deviceManagerService.updateCurrentDeviceLocation(
+      lat: p.latitude,
+      lng: p.longitude,
+      speedKmh: p.speed.clamp(0, 999) * 3.6,
+      heading: p.heading,
+      address: geocodingService.fullAddress,
+      isTrackingActive: _active,
+    );
     notifyListeners();
   }
 
@@ -355,6 +365,12 @@ class TrackingService extends ChangeNotifier {
         if (last != null && _current == null) {
           _current = last;
           geocodingService.updateFromPosition(last.latitude, last.longitude);
+          deviceManagerService.registerCurrentDevice(
+            latitude: last.latitude,
+            longitude: last.longitude,
+            address: geocodingService.fullAddress,
+            isTrackingActive: _active,
+          );
           notifyListeners();
         }
       }
@@ -389,6 +405,14 @@ class TrackingService extends ChangeNotifier {
         _current = current;
         geocodingService.updateFromPosition(current.latitude, current.longitude);
         GeofenceService().checkLocation(current);
+        deviceManagerService.registerCurrentDevice(
+          latitude: current.latitude,
+          longitude: current.longitude,
+          speedKmh: current.speed.clamp(0, 999) * 3.6,
+          heading: current.heading,
+          address: geocodingService.fullAddress,
+          isTrackingActive: _active,
+        );
         notifyListeners();
         return current;
       }
@@ -651,6 +675,15 @@ class TrackingService extends ChangeNotifier {
     _current = p;
     geocodingService.updateFromPosition(p.latitude, p.longitude);
     GeofenceService().checkLocation(p);
+
+    deviceManagerService.updateCurrentDeviceLocation(
+      lat: p.latitude,
+      lng: p.longitude,
+      speedKmh: p.speed.clamp(0, 999) * 3.6,
+      heading: p.heading,
+      address: geocodingService.fullAddress,
+      isTrackingActive: _active,
+    );
 
     // Reject coarse cell-tower triangulation fixes (> 250m) from movement path.
     // In-bag or pocket positioning typically maintains 30m - 220m accuracy.
