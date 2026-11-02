@@ -1298,7 +1298,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
       _selectedDate,
       vehicleFilter: _selectedVehicleFilter,
     );
-    final kmText = totalKm > 0 ? '${totalKm.toStringAsFixed(1)} km' : '0 km';
+    String kmText;
+    if (totalKm <= 0.0) {
+      kmText = '0 km';
+    } else if (totalKm < 1.0) {
+      kmText = '${totalKm.toStringAsFixed(2)} km';
+    } else {
+      kmText = '${totalKm.toStringAsFixed(1)} km';
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
@@ -1919,6 +1926,22 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                 ),
               ),
             ),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                trackingService.todayDistanceFormatted,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -2074,7 +2097,42 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
               ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
+
+          // Live Stats: Today Distance • Current Speed • Travel Mode
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.tileBackground,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildLiveStatMini(
+                  label: 'TODAY DISTANCE',
+                  value: trackingService.todayDistanceFormatted,
+                  icon: Icons.straighten_rounded,
+                  color: AppColors.primary,
+                ),
+                Container(width: 1, height: 26, color: AppColors.border),
+                _buildLiveStatMini(
+                  label: 'SPEED',
+                  value: '$speedKmh km/h',
+                  icon: Icons.speed_rounded,
+                  color: AppColors.navyDark,
+                ),
+                Container(width: 1, height: 26, color: AppColors.border),
+                _buildLiveStatMini(
+                  label: 'TRAVEL MODE',
+                  value: trackingService.currentVehicle.displayName,
+                  icon: trackingService.currentVehicle.icon,
+                  color: trackingService.currentVehicle.color,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
           GestureDetector(
             onTap: () {
               showModalBottomSheet(
@@ -2187,6 +2245,47 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildLiveStatMini({
+    required String label,
+    required String value,
+    required IconData icon,
+    required Color color,
+  }) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 12, color: color),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+                color: AppColors.textMuted,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 3),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: color == AppColors.primary ? AppColors.primary : AppColors.navyDark,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
     );
   }
 

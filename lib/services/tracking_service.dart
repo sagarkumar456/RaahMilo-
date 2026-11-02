@@ -227,7 +227,45 @@ class TrackingService extends ChangeNotifier {
   String? get lastError => _lastError;
 
   final List<TripModel> _historyTrips = [];
-  List<TripModel> get historyTrips => List.unmodifiable(_historyTrips);
+  List<TripModel> get historyTrips {
+    final list = List<TripModel>.from(_historyTrips);
+    if (_active && _tripPoints.length >= 2) {
+      final activeTrip = TripModel(
+        id: _tripId ?? 'live_active',
+        title: '${_currentVehicle.displayName} Trip • In Progress (Live)',
+        ownerId: authService.uid,
+        viewerIds: [],
+        startedAt: (_began ?? DateTime.now()).toLocal(),
+        endedAt: null,
+        distanceMeters: currentTripDistanceMeters,
+        isActive: true,
+        points: List<TripPoint>.from(_tripPoints),
+        vehicleType: _currentVehicle.name,
+      );
+      list.insert(0, activeTrip);
+    }
+    return List.unmodifiable(list);
+  }
+
+  double get currentTripDistanceMeters {
+    double m = _meters;
+    if (_tripPoints.length >= 2) {
+      double ptsDist = 0.0;
+      for (int i = 0; i < _tripPoints.length - 1; i++) {
+        ptsDist += Geolocator.distanceBetween(
+          _tripPoints[i].latitude,
+          _tripPoints[i].longitude,
+          _tripPoints[i + 1].latitude,
+          _tripPoints[i + 1].longitude,
+        );
+      }
+      if (ptsDist > m) {
+        m = ptsDist;
+        _meters = ptsDist;
+      }
+    }
+    return m;
+  }
 
   VehicleType _currentVehicle = VehicleType.car;
   VehicleType get currentVehicle => _currentVehicle;
@@ -256,6 +294,18 @@ class TrackingService extends ChangeNotifier {
     } catch (_) {}
   }
 
+  double get todayDistanceMeters => getDistanceForDate(DateTime.now()) * 1000.0;
+  double get todayDistanceKm => getDistanceForDate(DateTime.now());
+
+  String get todayDistanceFormatted {
+    final km = todayDistanceKm;
+    if (km <= 0.0) return '0 km';
+    if (km < 1.0) {
+      return '${km.toStringAsFixed(2)} km';
+    }
+    return '${km.toStringAsFixed(1)} km';
+  }
+
   double getDistanceForDate(DateTime date, {VehicleType? vehicleFilter}) {
     double totalMeters = 0.0;
     for (final trip in _historyTrips) {
@@ -264,17 +314,45 @@ class TrackingService extends ChangeNotifier {
           tripDate.month == date.month &&
           tripDate.day == date.day) {
         if (vehicleFilter == null || trip.vehicleTypeEnum == vehicleFilter) {
-          totalMeters += trip.distanceMeters;
+          double dist = trip.distanceMeters;
+          // Fallback: If trip.distanceMeters was 0, compute from breadcrumbs
+          if (dist <= 0.0 && trip.points.length >= 2) {
+            for (int i = 0; i < trip.points.length - 1; i++) {
+              dist += Geolocator.distanceBetween(
+                trip.points[i].latitude,
+                trip.points[i].longitude,
+                trip.points[i + 1].latitude,
+                trip.points[i + 1].longitude,
+              );
+            }
+          }
+          totalMeters += dist;
         }
       }
     }
     final now = DateTime.now();
-    if (_active &&
-        date.year == now.year &&
+    if (date.year == now.year &&
         date.month == now.month &&
         date.day == now.day) {
       if (vehicleFilter == null || _currentVehicle == vehicleFilter) {
-        totalMeters += _meters;
+        double currentMeters = _meters;
+        // Fallback: If _meters is 0 or less than distance between drawn points, compute directly from points
+        if (_tripPoints.length >= 2) {
+          double pointsDist = 0.0;
+          for (int i = 0; i < _tripPoints.length - 1; i++) {
+            pointsDist += Geolocator.distanceBetween(
+              _tripPoints[i].latitude,
+              _tripPoints[i].longitude,
+              _tripPoints[i + 1].latitude,
+              _tripPoints[i + 1].longitude,
+            );
+          }
+          if (pointsDist > currentMeters) {
+            currentMeters = pointsDist;
+            _meters = pointsDist;
+          }
+        }
+        totalMeters += currentMeters;
       }
     }
     return totalMeters / 1000.0;
