@@ -129,3 +129,4 @@ class LostDeviceMarkerWidget extends StatelessWidget {
     );
   }
 }
+

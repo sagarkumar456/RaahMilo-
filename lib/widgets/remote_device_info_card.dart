@@ -356,3 +356,4 @@ class RemoteDeviceInfoCard extends StatelessWidget {
     );
   }
 }
+
