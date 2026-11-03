@@ -308,6 +308,8 @@ class TrackingService extends ChangeNotifier {
 
   double getDistanceForDate(DateTime date, {VehicleType? vehicleFilter}) {
     double totalMeters = 0.0;
+    int historyCountForDate = 0;
+
     for (final trip in _historyTrips) {
       final tripDate = trip.startedAt.toLocal();
       if (tripDate.year == date.year &&
@@ -327,24 +329,34 @@ class TrackingService extends ChangeNotifier {
             }
           }
           totalMeters += dist;
+          historyCountForDate++;
         }
       }
     }
+
     final now = DateTime.now();
-    if (date.year == now.year &&
+    final isToday = date.year == now.year &&
         date.month == now.month &&
-        date.day == now.day) {
-      if (vehicleFilter == null || _currentVehicle == vehicleFilter) {
+        date.day == now.day;
+
+    if (vehicleFilter == null || _currentVehicle == vehicleFilter) {
+      if (isToday) {
+        // Today's active tracking meters
         double currentMeters = _meters;
-        // Fallback: If _meters is 0 or less than distance between drawn points, compute directly from points
-        if (_tripPoints.length >= 2) {
+        // Check today's points in _tripPoints
+        final todayPoints = _tripPoints.where((tp) {
+          final pt = tp.timestamp.toLocal();
+          return pt.year == now.year && pt.month == now.month && pt.day == now.day;
+        }).toList();
+
+        if (todayPoints.length >= 2) {
           double pointsDist = 0.0;
-          for (int i = 0; i < _tripPoints.length - 1; i++) {
+          for (int i = 0; i < todayPoints.length - 1; i++) {
             pointsDist += Geolocator.distanceBetween(
-              _tripPoints[i].latitude,
-              _tripPoints[i].longitude,
-              _tripPoints[i + 1].latitude,
-              _tripPoints[i + 1].longitude,
+              todayPoints[i].latitude,
+              todayPoints[i].longitude,
+              todayPoints[i + 1].latitude,
+              todayPoints[i + 1].longitude,
             );
           }
           if (pointsDist > currentMeters) {
@@ -353,6 +365,28 @@ class TrackingService extends ChangeNotifier {
           }
         }
         totalMeters += currentMeters;
+      } else {
+        // Past day (e.g. yesterday 2 Nov): If there are unfinalized points in _tripPoints for this date
+        // and no history trip was saved yet, calculate directly from those points!
+        if (historyCountForDate == 0) {
+          final pastDatePoints = _tripPoints.where((tp) {
+            final pt = tp.timestamp.toLocal();
+            return pt.year == date.year && pt.month == date.month && pt.day == date.day;
+          }).toList();
+
+          if (pastDatePoints.length >= 2) {
+            double pastDist = 0.0;
+            for (int i = 0; i < pastDatePoints.length - 1; i++) {
+              pastDist += Geolocator.distanceBetween(
+                pastDatePoints[i].latitude,
+                pastDatePoints[i].longitude,
+                pastDatePoints[i + 1].latitude,
+                pastDatePoints[i + 1].longitude,
+              );
+            }
+            totalMeters += pastDist;
+          }
+        }
       }
     }
     return totalMeters / 1000.0;
@@ -371,27 +405,82 @@ class TrackingService extends ChangeNotifier {
       return true;
     }).toList();
 
-    // If viewing today and tracking is currently active with points, include live active trip
     final now = DateTime.now();
-    if (_active &&
-        date.year == now.year &&
+    final isToday = date.year == now.year &&
         date.month == now.month &&
-        date.day == now.day &&
-        _tripPoints.length >= 2) {
-      if (vehicleFilter == null || _currentVehicle == vehicleFilter) {
-        final activeTrip = TripModel(
-          id: _tripId ?? 'live_active',
-          title: '${_currentVehicle.displayName} Trip • In Progress (Live)',
-          ownerId: authService.uid,
-          viewerIds: [],
-          startedAt: (_began ?? now).toLocal(),
-          endedAt: null,
-          distanceMeters: _meters,
-          isActive: true,
-          points: List<TripPoint>.from(_tripPoints),
-          vehicleType: _currentVehicle.name,
-        );
-        list.insert(0, activeTrip);
+        date.day == now.day;
+
+    if (vehicleFilter == null || _currentVehicle == vehicleFilter) {
+      if (isToday) {
+        // If viewing today and tracking is currently active with points, include live active trip
+        final todayPoints = _tripPoints.where((tp) {
+          final pt = tp.timestamp.toLocal();
+          return pt.year == now.year && pt.month == now.month && pt.day == now.day;
+        }).toList();
+
+        if (_active && (todayPoints.length >= 2 || _tripPoints.length >= 2)) {
+          final pts = todayPoints.isNotEmpty ? todayPoints : List<TripPoint>.from(_tripPoints);
+          double activeDist = _meters;
+          if (pts.length >= 2) {
+            double computed = 0.0;
+            for (int i = 0; i < pts.length - 1; i++) {
+              computed += Geolocator.distanceBetween(
+                pts[i].latitude,
+                pts[i].longitude,
+                pts[i + 1].latitude,
+                pts[i + 1].longitude,
+              );
+            }
+            if (computed > activeDist) activeDist = computed;
+          }
+
+          final activeTrip = TripModel(
+            id: _tripId ?? 'live_active',
+            title: '${_currentVehicle.displayName} Trip • In Progress (Live)',
+            ownerId: authService.uid,
+            viewerIds: [],
+            startedAt: pts.isNotEmpty ? pts.first.timestamp.toLocal() : (_began ?? now).toLocal(),
+            endedAt: null,
+            distanceMeters: activeDist,
+            isActive: true,
+            points: pts,
+            vehicleType: _currentVehicle.name,
+          );
+          list.insert(0, activeTrip);
+        }
+      } else {
+        // Past day: If there are unfinalized points in _tripPoints and no trip in history for this date
+        if (list.isEmpty) {
+          final pastDatePoints = _tripPoints.where((tp) {
+            final pt = tp.timestamp.toLocal();
+            return pt.year == date.year && pt.month == date.month && pt.day == date.day;
+          }).toList();
+
+          if (pastDatePoints.length >= 2) {
+            double pastDist = 0.0;
+            for (int i = 0; i < pastDatePoints.length - 1; i++) {
+              pastDist += Geolocator.distanceBetween(
+                pastDatePoints[i].latitude,
+                pastDatePoints[i].longitude,
+                pastDatePoints[i + 1].latitude,
+                pastDatePoints[i + 1].longitude,
+              );
+            }
+            final pastTrip = TripModel(
+              id: 'trip_${date.year}_${date.month}_${date.day}_unfinalized',
+              title: '${_currentVehicle.displayName} Trip at ${DateFormat('hh:mm a').format(pastDatePoints.first.timestamp.toLocal())}',
+              ownerId: authService.uid,
+              viewerIds: [],
+              startedAt: pastDatePoints.first.timestamp.toLocal(),
+              endedAt: pastDatePoints.last.timestamp.toLocal(),
+              distanceMeters: pastDist,
+              isActive: false,
+              points: pastDatePoints,
+              vehicleType: _currentVehicle.name,
+            );
+            list.add(pastTrip);
+          }
+        }
       }
     }
 
@@ -788,6 +877,16 @@ class TrackingService extends ChangeNotifier {
       return;
     }
 
+    // Day boundary rollover: If recorded points belong to a previous calendar day,
+    // automatically finalize yesterday's trip into history and start fresh for today
+    final nowLocal = p.timestamp.toLocal();
+    final firstPointLocal = _tripPoints.first.timestamp.toLocal();
+    if (firstPointLocal.year != nowLocal.year ||
+        firstPointLocal.month != nowLocal.month ||
+        firstPointLocal.day != nowLocal.day) {
+      await _rolloverPastDayTrips(nowLocal);
+    }
+
     final lastPoint = _tripPoints.last;
     final genuine = isGenuineMovement(
       candidate: p,
@@ -914,6 +1013,94 @@ class TrackingService extends ChangeNotifier {
     } catch (_) {}
   }
 
+  Future<void> _rolloverPastDayTrips(DateTime nowLocal) async {
+    try {
+      final Map<String, List<TripPoint>> pointsByDay = {};
+      for (final tp in _tripPoints) {
+        final d = tp.timestamp.toLocal();
+        final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        pointsByDay.putIfAbsent(key, () => []).add(tp);
+      }
+
+      final todayKey = '${nowLocal.year}-${nowLocal.month.toString().padLeft(2, '0')}-${nowLocal.day.toString().padLeft(2, '0')}';
+
+      for (final entry in pointsByDay.entries) {
+        if (entry.key != todayKey) {
+          final pastPoints = entry.value;
+          if (pastPoints.length >= 2) {
+            double pastDist = 0.0;
+            for (int i = 0; i < pastPoints.length - 1; i++) {
+              pastDist += Geolocator.distanceBetween(
+                pastPoints[i].latitude,
+                pastPoints[i].longitude,
+                pastPoints[i + 1].latitude,
+                pastPoints[i + 1].longitude,
+              );
+            }
+            final pastDate = pastPoints.first.timestamp.toLocal();
+            final exists = _historyTrips.any((t) {
+              final td = t.startedAt.toLocal();
+              return td.year == pastDate.year && td.month == pastDate.month && td.day == pastDate.day;
+            });
+            if (!exists) {
+              final finalizedTrip = TripModel(
+                id: 'trip_${pastDate.year}_${pastDate.month}_${pastDate.day}_${pastPoints.first.timestamp.millisecondsSinceEpoch}',
+                title: '${_currentVehicle.displayName} Trip • ${DateFormat('d MMM yyyy').format(pastDate)}',
+                ownerId: authService.uid,
+                viewerIds: [],
+                startedAt: pastPoints.first.timestamp,
+                endedAt: pastPoints.last.timestamp,
+                distanceMeters: pastDist,
+                isActive: false,
+                points: pastPoints,
+                vehicleType: _currentVehicle.name,
+              );
+              _historyTrips.insert(0, finalizedTrip);
+              _historyTrips.removeWhere((t) => t.id.startsWith('sample_'));
+              await _saveLocalHistory();
+
+              // Update old Firestore trip doc if it matched previous tripId
+              if (_tripId != null && !_tripId!.startsWith('local_')) {
+                try {
+                  await FirebaseFirestore.instance.collection('trips').doc(_tripId).update({
+                    'active': false,
+                    'endedAt': Timestamp.fromDate(pastPoints.last.timestamp),
+                    'distanceMeters': pastDist,
+                  });
+                } catch (_) {}
+              }
+            }
+          }
+        }
+      }
+
+      // Retain only today's points
+      final todayPoints = pointsByDay[todayKey] ?? [];
+      _tripPoints.clear();
+      _tripPoints.addAll(todayPoints);
+      _points.clear();
+      _points.addAll(todayPoints.map((tp) => LatLng(tp.latitude, tp.longitude)));
+
+      double todayMeters = 0.0;
+      for (int i = 0; i < todayPoints.length - 1; i++) {
+        todayMeters += Geolocator.distanceBetween(
+          todayPoints[i].latitude,
+          todayPoints[i].longitude,
+          todayPoints[i + 1].latitude,
+          todayPoints[i + 1].longitude,
+        );
+      }
+      _meters = todayMeters;
+      _began = todayPoints.isNotEmpty ? todayPoints.first.timestamp : nowLocal;
+      _tripId = 'trip_${nowLocal.millisecondsSinceEpoch}';
+
+      await _saveActiveTripState();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error during day rollover: $e');
+    }
+  }
+
   LocationSettings _createLocationSettings() {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
@@ -990,6 +1177,91 @@ class TrackingService extends ChangeNotifier {
       }
 
       final now = DateTime.now();
+
+      // Compute total effective distance from restored points as fallback
+      double restoredComputedDist = 0.0;
+      if (restoredTripPoints.length >= 2) {
+        for (int i = 0; i < restoredTripPoints.length - 1; i++) {
+          restoredComputedDist += Geolocator.distanceBetween(
+            restoredTripPoints[i].latitude,
+            restoredTripPoints[i].longitude,
+            restoredTripPoints[i + 1].latitude,
+            restoredTripPoints[i + 1].longitude,
+          );
+        }
+      }
+      final effectiveMeters = savedMeters > restoredComputedDist ? savedMeters : restoredComputedDist;
+
+      // Group restored points by local calendar day (YYYY-MM-DD)
+      final Map<String, List<TripPoint>> pointsByDay = {};
+      for (final tp in restoredTripPoints) {
+        final d = tp.timestamp.toLocal();
+        final key = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+        pointsByDay.putIfAbsent(key, () => []).add(tp);
+      }
+
+      final todayKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+
+      // Auto-finalize any past day points into _historyTrips immediately!
+      for (final entry in pointsByDay.entries) {
+        if (entry.key != todayKey) {
+          final pastPoints = entry.value;
+          if (pastPoints.length >= 2) {
+            double pastDist = 0.0;
+            for (int i = 0; i < pastPoints.length - 1; i++) {
+              pastDist += Geolocator.distanceBetween(
+                pastPoints[i].latitude,
+                pastPoints[i].longitude,
+                pastPoints[i + 1].latitude,
+                pastPoints[i + 1].longitude,
+              );
+            }
+            if (pastDist >= 5.0) {
+              final pastDate = pastPoints.first.timestamp.toLocal();
+              final exists = _historyTrips.any((t) {
+                final td = t.startedAt.toLocal();
+                return td.year == pastDate.year && td.month == pastDate.month && td.day == pastDate.day;
+              });
+              if (!exists) {
+                final pastTrip = TripModel(
+                  id: 'trip_${pastDate.year}_${pastDate.month}_${pastDate.day}_${pastPoints.first.timestamp.millisecondsSinceEpoch}',
+                  title: '${_currentVehicle.displayName} Trip • ${DateFormat('d MMM yyyy').format(pastDate)}',
+                  ownerId: authService.uid,
+                  viewerIds: [],
+                  startedAt: pastPoints.first.timestamp,
+                  endedAt: pastPoints.last.timestamp,
+                  distanceMeters: pastDist,
+                  isActive: false,
+                  points: pastPoints,
+                  vehicleType: _currentVehicle.name,
+                );
+                _historyTrips.insert(0, pastTrip);
+                _historyTrips.removeWhere((t) => t.id.startsWith('sample_'));
+                await _saveLocalHistory();
+
+                if (!savedTripId.startsWith('local_')) {
+                  try {
+                    await FirebaseFirestore.instance.collection('trips').doc(pastTrip.id).set({
+                      'title': pastTrip.title,
+                      'ownerId': authService.uid,
+                      'viewerIds': [],
+                      'active': false,
+                      'startedAt': Timestamp.fromDate(pastTrip.startedAt),
+                      'endedAt': Timestamp.fromDate(pastTrip.endedAt!),
+                      'distanceMeters': pastDist,
+                      'vehicleType': _currentVehicle.name,
+                    }, SetOptions(merge: true));
+                  } catch (_) {}
+                }
+              }
+            }
+          }
+        }
+      }
+
+      final todayPoints = pointsByDay[todayKey] ?? [];
+      final todayRestoredPoints = todayPoints.map((tp) => LatLng(tp.latitude, tp.longitude)).toList();
+
       final lastPointTime = restoredTripPoints.isNotEmpty
           ? restoredTripPoints.last.timestamp
           : beganDate;
@@ -997,21 +1269,33 @@ class TrackingService extends ChangeNotifier {
       // If app was terminated for more than 4 hours, auto-finalize the old trip into history if real movement was made
       if (now.difference(lastPointTime).inHours >= 4) {
         debugPrint('Auto-saving stale trip into history: $savedTripId');
-        if (restoredTripPoints.length >= 2 && savedMeters >= 15.0) {
-          final staleTrip = TripModel(
-            id: savedTripId,
-            title: 'Trip at ${DateFormat('hh:mm a').format(beganDate)}',
-            ownerId: authService.uid,
-            viewerIds: [],
-            startedAt: beganDate,
-            endedAt: lastPointTime,
-            distanceMeters: savedMeters,
-            isActive: false,
-            points: restoredTripPoints,
-          );
-          _historyTrips.insert(0, staleTrip);
-          _historyTrips.removeWhere((t) => t.id.startsWith('sample_'));
-          await _saveLocalHistory();
+        if (todayPoints.length >= 2) {
+          double todayDist = 0.0;
+          for (int i = 0; i < todayPoints.length - 1; i++) {
+            todayDist += Geolocator.distanceBetween(
+              todayPoints[i].latitude,
+              todayPoints[i].longitude,
+              todayPoints[i + 1].latitude,
+              todayPoints[i + 1].longitude,
+            );
+          }
+          if (todayDist >= 6.0) {
+            final staleTrip = TripModel(
+              id: savedTripId,
+              title: '${_currentVehicle.displayName} Trip at ${DateFormat('hh:mm a').format(todayPoints.first.timestamp)}',
+              ownerId: authService.uid,
+              viewerIds: [],
+              startedAt: todayPoints.first.timestamp,
+              endedAt: todayPoints.last.timestamp,
+              distanceMeters: todayDist,
+              isActive: false,
+              points: todayPoints,
+              vehicleType: _currentVehicle.name,
+            );
+            _historyTrips.insert(0, staleTrip);
+            _historyTrips.removeWhere((t) => t.id.startsWith('sample_'));
+            await _saveLocalHistory();
+          }
         }
 
         await prefs.remove('is_tracking_active');
@@ -1025,7 +1309,7 @@ class TrackingService extends ChangeNotifier {
             await FirebaseFirestore.instance.collection('trips').doc(savedTripId).update({
               'active': false,
               'endedAt': Timestamp.fromDate(lastPointTime),
-              'distanceMeters': savedMeters,
+              'distanceMeters': effectiveMeters,
             });
           } catch (_) {}
         }
@@ -1034,18 +1318,29 @@ class TrackingService extends ChangeNotifier {
         return;
       }
 
-      // Resume active tracking session seamlessly with complete route preserved
-      _tripId = savedTripId;
-      _began = beganDate;
-      _meters = savedMeters;
+      // Resume active tracking session seamlessly with today's route
+      double todayDist = 0.0;
+      for (int i = 0; i < todayPoints.length - 1; i++) {
+        todayDist += Geolocator.distanceBetween(
+          todayPoints[i].latitude,
+          todayPoints[i].longitude,
+          todayPoints[i + 1].latitude,
+          todayPoints[i + 1].longitude,
+        );
+      }
+
+      final isFromToday = beganDate.day == now.day && beganDate.month == now.month && beganDate.year == now.year;
+      _tripId = isFromToday ? savedTripId : 'trip_${now.millisecondsSinceEpoch}';
+      _began = isFromToday ? beganDate : (todayPoints.isNotEmpty ? todayPoints.first.timestamp : now);
+      _meters = todayDist > 0 ? todayDist : (isFromToday ? effectiveMeters : 0.0);
       _active = true;
       _elapsed = now.difference(_began!);
 
       _points.clear();
-      _points.addAll(restoredPoints);
+      _points.addAll(todayRestoredPoints);
 
       _tripPoints.clear();
-      _tripPoints.addAll(restoredTripPoints);
+      _tripPoints.addAll(todayPoints);
 
       if (_tripPoints.isNotEmpty) {
         final last = _tripPoints.last;
@@ -1310,11 +1605,35 @@ class TrackingService extends ChangeNotifier {
 
       final existingIds = _historyTrips.map((t) => t.id).toSet();
       bool changed = false;
+      final now = DateTime.now();
 
-      final docs = snapshot.docs.where((d) => d.data()['active'] != true).toList();
-
-      for (final doc in docs) {
+      for (final doc in snapshot.docs) {
         final data = doc.data();
+        final isActive = data['active'] == true;
+        if (isActive) {
+          // If the trip is marked active in Firestore, but started on a past day and is not our current live tripId:
+          final startedAtTs = data['startedAt'] as Timestamp?;
+          if (startedAtTs != null) {
+            final startedAt = startedAtTs.toDate().toLocal();
+            final isPastDay = startedAt.year != now.year ||
+                startedAt.month != now.month ||
+                startedAt.day != now.day;
+            if (isPastDay && doc.id != _tripId) {
+              final firestoreTrip = TripModel.fromFirestore(doc.id, data).copyWith(
+                isActive: false,
+                ownerId: uid,
+              );
+              if (!existingIds.contains(doc.id)) {
+                _historyTrips.add(firestoreTrip);
+                existingIds.add(doc.id);
+                changed = true;
+              }
+              doc.reference.update({'active': false}).catchError((_) {});
+            }
+          }
+          continue;
+        }
+
         if (!existingIds.contains(doc.id)) {
           final firestoreTrip = TripModel.fromFirestore(doc.id, data);
           if (firestoreTrip.ownerId == uid || firestoreTrip.ownerId.isEmpty) {
@@ -1330,7 +1649,21 @@ class TrackingService extends ChangeNotifier {
                 .map((p) => TripPoint.fromMap(Map<String, dynamic>.from(p)))
                 .toList();
             if (pts.isNotEmpty) {
-              _historyTrips[idx] = _historyTrips[idx].copyWith(points: pts);
+              double dist = _historyTrips[idx].distanceMeters;
+              if (dist <= 0.0 && pts.length >= 2) {
+                for (int i = 0; i < pts.length - 1; i++) {
+                  dist += Geolocator.distanceBetween(
+                    pts[i].latitude,
+                    pts[i].longitude,
+                    pts[i + 1].latitude,
+                    pts[i + 1].longitude,
+                  );
+                }
+              }
+              _historyTrips[idx] = _historyTrips[idx].copyWith(
+                points: pts,
+                distanceMeters: dist > 0 ? dist : _historyTrips[idx].distanceMeters,
+              );
               changed = true;
             }
           }
@@ -1378,10 +1711,22 @@ class TrackingService extends ChangeNotifier {
       if (snap.docs.isNotEmpty) {
         final pts = snap.docs.map((d) => TripPoint.fromMap(d.data())).toList();
         if (pts.isNotEmpty) {
-          _updateTripPointsInMemory(trip.id, pts);
+          double dist = trip.distanceMeters;
+          if (dist <= 0.0 && pts.length >= 2) {
+            for (int i = 0; i < pts.length - 1; i++) {
+              dist += Geolocator.distanceBetween(
+                pts[i].latitude,
+                pts[i].longitude,
+                pts[i + 1].latitude,
+                pts[i + 1].longitude,
+              );
+            }
+          }
+          _updateTripPointsInMemory(trip.id, pts, updatedDistance: dist > 0 ? dist : null);
           // Backfill into document for immediate future access
           docRef.update({
             'points': pts.map((p) => p.toJson()).toList(),
+            if (dist > 0) 'distanceMeters': dist,
           }).catchError((_) {});
           return pts;
         }
@@ -1392,10 +1737,13 @@ class TrackingService extends ChangeNotifier {
     return const [];
   }
 
-  void _updateTripPointsInMemory(String tripId, List<TripPoint> pts) {
+  void _updateTripPointsInMemory(String tripId, List<TripPoint> pts, {double? updatedDistance}) {
     final idx = _historyTrips.indexWhere((t) => t.id == tripId);
     if (idx != -1) {
-      _historyTrips[idx] = _historyTrips[idx].copyWith(points: pts);
+      _historyTrips[idx] = _historyTrips[idx].copyWith(
+        points: pts,
+        distanceMeters: updatedDistance ?? _historyTrips[idx].distanceMeters,
+      );
       _saveLocalHistory();
       notifyListeners();
     }
