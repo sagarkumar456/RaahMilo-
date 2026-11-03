@@ -6,62 +6,32 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid != null;
     }
 
-    function isOwner(ownerId) {
-      return signedIn() && request.auth.uid == ownerId;
-    }
+    // Users profile and device tracking
+    match /users/{userId} {
+      allow read, write: if signedIn();
 
-    function isViewer(viewerList) {
-      return signedIn() && (
-        request.auth.uid in viewerList ||
-        (request.auth.token.email != null && request.auth.token.email in viewerList)
-      );
-    }
-
-    function isTripAllowed() {
-      return signedIn() && (
-        resource.data.ownerId == request.auth.uid ||
-        isViewer(resource.data.viewerIds)
-      );
-    }
-
-    // Trips collection: only owner and authorized viewers can read or interact
-    match /trips/{tripId} {
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isTripAllowed();
-      allow update: if signedIn() && (resource.data.ownerId == request.auth.uid || isTripAllowed());
-      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
-
-      match /points/{pointId} {
-        allow read: if signedIn() && (
-          get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid ||
-          isViewer(get(/databases/$(database)/documents/trips/$(tripId)).data.viewerIds)
-        );
-        allow create: if signedIn() && get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid;
-        allow update, delete: if false;
+      match /devices/{deviceId} {
+        allow read, write: if signedIn();
       }
     }
 
-    // Device Shares: only creator and target recipient can view or accept
-    match /device_shares/{shareId} {
-      allow read: if signedIn() && (
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.sharedWithUid == request.auth.uid ||
-        (request.auth.token.email != null && resource.data.sharedWithEmail == request.auth.token.email)
-      );
-      allow create: if signedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if signedIn() && (
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.sharedWithUid == request.auth.uid ||
-        (request.auth.token.email != null && resource.data.sharedWithEmail == request.auth.token.email)
-      );
-      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
+    // Trips collection and points subcollection
+    match /trips/{tripId} {
+      allow read, write: if signedIn();
+
+      match /points/{pointId} {
+        allow read, write: if signedIn();
+      }
     }
 
-    // Notifications: isolated per user
+    // Device Shares: family tracking & device sharing
+    match /device_shares/{shareId} {
+      allow read, write: if signedIn();
+    }
+
+    // Notifications: in-app alerts and notifications
     match /notifications/{notifId} {
-      allow read, write: if signedIn() && (
-        resource == null || resource.data.userId == request.auth.uid || request.resource.data.userId == request.auth.uid
-      );
+      allow read, write: if signedIn();
     }
 
     // Deny all other collections by default
