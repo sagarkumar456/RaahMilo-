@@ -441,13 +441,16 @@ class TrackingService extends ChangeNotifier {
 
     if (vehicleFilter == null || _currentVehicle == vehicleFilter) {
       if (isToday) {
-        // If viewing today and tracking is currently active with points, include live active trip
+        // If viewing today, include any live or recorded points from today
         final todayPoints = _tripPoints.where((tp) {
           final pt = tp.timestamp.toLocal();
           return pt.year == now.year && pt.month == now.month && pt.day == now.day;
         }).toList();
 
-        if (_active && (todayPoints.length >= 2 || _tripPoints.length >= 2)) {
+        final hasTodayPoints = todayPoints.length >= 2 || _tripPoints.length >= 2;
+        final alreadyHasActive = list.any((t) => t.isActive || t.id == _tripId);
+
+        if (hasTodayPoints && !alreadyHasActive) {
           final pts = todayPoints.isNotEmpty ? todayPoints : List<TripPoint>.from(_tripPoints);
           double activeDist = _meters;
           if (pts.length >= 2) {
@@ -465,13 +468,13 @@ class TrackingService extends ChangeNotifier {
 
           final activeTrip = TripModel(
             id: _tripId ?? 'live_active',
-            title: '${_currentVehicle.displayName} Trip • In Progress (Live)',
+            title: '${_currentVehicle.displayName} Trip • ${_active ? "In Progress (Live)" : "Today"}',
             ownerId: authService.uid,
             viewerIds: [],
             startedAt: pts.isNotEmpty ? pts.first.timestamp.toLocal() : (_began ?? now).toLocal(),
-            endedAt: null,
+            endedAt: _active ? null : (pts.isNotEmpty ? pts.last.timestamp.toLocal() : now.toLocal()),
             distanceMeters: activeDist,
-            isActive: true,
+            isActive: _active,
             points: pts,
             vehicleType: _currentVehicle.name,
           );
@@ -1804,10 +1807,17 @@ class TrackingService extends ChangeNotifier {
         }
       }
 
-      // Query points subcollection
-      final snap = await docRef.collection('points').orderBy('at').limit(3000).get();
+      // Query points subcollection (with fallback if orderBy('at') encounters indexing issue)
+      QuerySnapshot<Map<String, dynamic>> snap;
+      try {
+        snap = await docRef.collection('points').orderBy('at').limit(3000).get();
+      } catch (err) {
+        debugPrint('ensureTripPointsLoaded: orderBy error ($err), retrying without order...');
+        snap = await docRef.collection('points').limit(3000).get();
+      }
       if (snap.docs.isNotEmpty) {
         final pts = snap.docs.map((d) => TripPoint.fromMap(d.data())).toList();
+        pts.sort((a, b) => a.timestamp.compareTo(b.timestamp));
         if (pts.isNotEmpty) {
           double dist = trip.distanceMeters;
           if (dist <= 0.0 && pts.length >= 2) {

@@ -750,8 +750,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
           }
         }
 
-        // 2. Render Active Live Tracking Route (if currently tracking on today's view)
-        if (isActive && hasLiveRoute && isToday) {
+        // 2. Render Active Live Tracking Route (if currently tracking on today's view or unfinalized points exist)
+        final hasDrawnTodaySegments = segments.any((s) => s.points.isNotEmpty);
+        if (hasLiveRoute && isToday && (isActive || !hasDrawnTodaySegments)) {
           final liveColor = dayTrips.isNotEmpty ? TripDirectionHelper.colorReturn : TripDirectionHelper.colorOutward;
           animatedRoutes.add(
             RoutePolylineStyle(

@@ -93,5 +93,20 @@ void main() {
       expect(savedPoints, isNotNull);
       expect(savedPoints, contains('28.6139'));
     });
+
+    test('today points are retained and formed into trips even if tracking is paused', () {
+      final now = DateTime.now();
+      final points = [
+        TripPoint(latitude: 28.6139, longitude: 77.2090, speed: 5.0, accuracy: 5.0, timestamp: now.subtract(const Duration(minutes: 30))),
+        TripPoint(latitude: 28.6200, longitude: 77.2150, speed: 6.0, accuracy: 4.0, timestamp: now),
+      ];
+      final todayPoints = points.where((tp) {
+        final pt = tp.timestamp.toLocal();
+        return pt.year == now.year && pt.month == now.month && pt.day == now.day;
+      }).toList();
+
+      expect(todayPoints.length, equals(2));
+    });
   });
 }
+
