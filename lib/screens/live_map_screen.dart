@@ -177,6 +177,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
 
   Future<void> _refreshMapAndLocation() async {
     await trackingService.loadHistory();
+    await trackingService.syncFirestoreHistory();
     _selectedDate = DateTime.now();
     _selectedSegmentId = null;
     await trackingService.ensurePointsLoadedForDate(_selectedDate);
@@ -267,6 +268,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         if (isEnabled) {
           _initDeviceLocation();
           _startPassiveLocationStream();
+          trackingService.checkLocationHealth(autoStart: true);
+          _refreshMapAndLocation();
         } else {
           _passivePositionSub?.cancel();
         }

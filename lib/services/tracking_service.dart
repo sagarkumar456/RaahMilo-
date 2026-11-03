@@ -76,25 +76,22 @@ class TrackingService extends ChangeNotifier {
     final oldUid = _lastUserUid;
     _lastUserUid = newUid;
 
-    // 1. Save old user's local history before switching
-    if (oldUid != null && oldUid.isNotEmpty) {
+    // Only wipe and isolate if switching between two different user accounts
+    if (oldUid != null && oldUid.isNotEmpty && oldUid != newUid) {
       await _saveLocalHistoryForUser(oldUid);
+      _historyTrips.clear();
+      if (_active) {
+        await stop();
+      }
+      _points.clear();
+      _tripPoints.clear();
+      _meters = 0.0;
+      _tripId = null;
+      _began = null;
+      notifyListeners();
     }
 
-    // 2. Clear current in-memory trips so no data leaks to another account
-    _historyTrips.clear();
-
-    if (_active) {
-      await stop();
-    }
-    _points.clear();
-    _tripPoints.clear();
-    _meters = 0.0;
-    _tripId = null;
-    _began = null;
-    notifyListeners();
-
-    // 3. If a user is now logged in, load their scoped trips and sync from cloud
+    // If a user is now logged in, load their scoped trips and sync from cloud
     if (newUid != null && newUid.isNotEmpty) {
       await loadHistory();
       await restoreActiveSession();
@@ -200,7 +197,14 @@ class TrackingService extends ChangeNotifier {
 
       if (enabled && hasPerm) {
         if (!_active && !_starting && autoStart) {
-          start();
+          // Attempt to restore any active session from SharedPreferences first
+          await restoreActiveSession();
+          if (!_active) {
+            await start();
+          }
+        } else if (_active && _positionSubscription == null) {
+          // Reconnect GPS position stream without wiping points or meters!
+          _reconnectPositionStream();
         }
         return true;
       } else {
@@ -208,6 +212,31 @@ class TrackingService extends ChangeNotifier {
       }
     } catch (_) {
       return false;
+    }
+  }
+
+  void _reconnectPositionStream() {
+    if (!_active) return;
+    try {
+      _positionSubscription?.cancel();
+      final locationSettings = _createLocationSettings();
+      _positionSubscription = Geolocator.getPositionStream(
+        locationSettings: locationSettings,
+      ).listen(
+        (p) => _onPosition(p),
+        onError: (Object e) {
+          _lastError = e.toString();
+          debugPrint('Position stream error: $e');
+          _positionSubscription?.cancel();
+          _positionSubscription = null;
+          notifyListeners();
+        },
+      );
+      Geolocator.getCurrentPosition().then((p) {
+        if (_active) _onPosition(p);
+      }).catchError((_) {});
+    } catch (e) {
+      debugPrint('Error reconnecting position stream: $e');
     }
   }
 
@@ -589,7 +618,7 @@ class TrackingService extends ChangeNotifier {
     }
   }
 
-  Future<void> start() async {
+  Future<void> start({bool preserveExistingPoints = false}) async {
     if (_active || _starting) return;
     _starting = true;
     _lastError = null;
@@ -619,14 +648,49 @@ class TrackingService extends ChangeNotifier {
       }
       _isBackgroundPermissionGranted = (permission == LocationPermission.always);
 
-      _began = DateTime.now();
-      _meters = 0.0;
-      _points.clear();
-      _tripPoints.clear();
-      _stationaryAnchor = null;
-      _isStationary = true;
-      _stationaryFixCount = 0;
-      _elapsed = Duration.zero;
+      // SAFETY: If there are existing unfinalized points with real movement,
+      // NEVER delete or drop them! Finalize and archive into _historyTrips first!
+      if (!preserveExistingPoints && _tripPoints.length >= 2) {
+        double dist = _meters;
+        if (dist <= 0.0) {
+          for (int i = 0; i < _tripPoints.length - 1; i++) {
+            dist += Geolocator.distanceBetween(
+              _tripPoints[i].latitude,
+              _tripPoints[i].longitude,
+              _tripPoints[i + 1].latitude,
+              _tripPoints[i + 1].longitude,
+            );
+          }
+        }
+        if (dist >= 6.0) {
+          final previousTrip = TripModel(
+            id: _tripId ?? 'trip_${DateTime.now().millisecondsSinceEpoch}',
+            title: '${_currentVehicle.displayName} Trip at ${DateFormat('hh:mm a').format(_began ?? DateTime.now())}',
+            ownerId: authService.uid,
+            viewerIds: [],
+            startedAt: _began ?? DateTime.now(),
+            endedAt: DateTime.now(),
+            distanceMeters: dist,
+            isActive: false,
+            points: List<TripPoint>.from(_tripPoints),
+            vehicleType: _currentVehicle.name,
+          );
+          _historyTrips.insert(0, previousTrip);
+          _historyTrips.removeWhere((t) => t.id.startsWith('sample_'));
+          await _saveLocalHistory();
+        }
+      }
+
+      if (!preserveExistingPoints) {
+        _began = DateTime.now();
+        _meters = 0.0;
+        _points.clear();
+        _tripPoints.clear();
+        _stationaryAnchor = null;
+        _isStationary = true;
+        _stationaryFixCount = 0;
+        _elapsed = Duration.zero;
+      }
 
       // Start elapsed timer
       _timer?.cancel();
@@ -689,6 +753,8 @@ class TrackingService extends ChangeNotifier {
           onError: (Object e) {
             _lastError = e.toString();
             debugPrint('Position stream error: $e');
+            _positionSubscription?.cancel();
+            _positionSubscription = null;
             notifyListeners();
           },
         );
@@ -705,6 +771,8 @@ class TrackingService extends ChangeNotifier {
             onError: (Object e) {
               _lastError = e.toString();
               debugPrint('Standard position stream error: $e');
+              _positionSubscription?.cancel();
+              _positionSubscription = null;
               notifyListeners();
             },
           );
@@ -750,8 +818,9 @@ class TrackingService extends ChangeNotifier {
       await prefs.setString('active_trip_user_id', authService.uid);
       if (_tripId != null) await prefs.setString('active_trip_id', _tripId!);
       if (_began != null) await prefs.setString('active_trip_began', _began!.toIso8601String());
-      await prefs.setDouble('active_trip_meters', 0.0);
-      await prefs.remove('active_trip_points');
+      await prefs.setDouble('active_trip_meters', _meters);
+      final jsonList = _tripPoints.map((tp) => tp.toJson()).toList();
+      await prefs.setString('active_trip_points', jsonEncode(jsonList));
     } catch (_) {}
   }
 
@@ -1486,8 +1555,20 @@ class TrackingService extends ChangeNotifier {
       } catch (_) {}
     }
 
+    double computedDist = totalDistance;
+    if (computedDist <= 0.0 && finalPoints.length >= 2) {
+      for (int i = 0; i < finalPoints.length - 1; i++) {
+        computedDist += Geolocator.distanceBetween(
+          finalPoints[i].latitude,
+          finalPoints[i].longitude,
+          finalPoints[i + 1].latitude,
+          finalPoints[i + 1].longitude,
+        );
+      }
+    }
+
     // Save to local history permanently only if phone actually moved
-    if (finalPoints.length >= 2 && totalDistance >= 6.0) {
+    if (finalPoints.length >= 2 && computedDist >= 6.0) {
       final completedTrip = TripModel(
         id: id ?? DateTime.now().millisecondsSinceEpoch.toString(),
         title: '${_currentVehicle.displayName} Trip at ${DateFormat('hh:mm a').format(beganTime)}',
@@ -1495,7 +1576,7 @@ class TrackingService extends ChangeNotifier {
         viewerIds: [],
         startedAt: beganTime,
         endedAt: now,
-        distanceMeters: totalDistance,
+        distanceMeters: computedDist,
         isActive: false,
         points: finalPoints,
         vehicleType: _currentVehicle.name,
@@ -1605,30 +1686,47 @@ class TrackingService extends ChangeNotifier {
 
       final existingIds = _historyTrips.map((t) => t.id).toSet();
       bool changed = false;
-      final now = DateTime.now();
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
         final isActive = data['active'] == true;
         if (isActive) {
-          // If the trip is marked active in Firestore, but started on a past day and is not our current live tripId:
-          final startedAtTs = data['startedAt'] as Timestamp?;
-          if (startedAtTs != null) {
-            final startedAt = startedAtTs.toDate().toLocal();
-            final isPastDay = startedAt.year != now.year ||
-                startedAt.month != now.month ||
-                startedAt.day != now.day;
-            if (isPastDay && doc.id != _tripId) {
-              final firestoreTrip = TripModel.fromFirestore(doc.id, data).copyWith(
-                isActive: false,
-                ownerId: uid,
-              );
-              if (!existingIds.contains(doc.id)) {
-                _historyTrips.add(firestoreTrip);
-                existingIds.add(doc.id);
+          // If the trip is marked active in Firestore, but is NOT our currently running local session (_tripId):
+          // It is an unclosed session from earlier today (e.g. before location toggle) or from a past day!
+          if (doc.id != _tripId) {
+            double dist = (data['distanceMeters'] as num?)?.toDouble() ?? 0.0;
+            List<TripPoint> pts = [];
+            if (data['points'] is List) {
+              pts = (data['points'] as List)
+                  .map((p) => TripPoint.fromMap(Map<String, dynamic>.from(p)))
+                  .toList();
+            }
+
+            final firestoreTrip = TripModel.fromFirestore(doc.id, data).copyWith(
+              isActive: false,
+              ownerId: uid,
+              distanceMeters: dist,
+              points: pts,
+            );
+            if (!existingIds.contains(doc.id)) {
+              _historyTrips.add(firestoreTrip);
+              existingIds.add(doc.id);
+              changed = true;
+            } else {
+              final idx = _historyTrips.indexWhere((t) => t.id == doc.id);
+              if (idx != -1 && _historyTrips[idx].points.isEmpty && pts.isNotEmpty) {
+                _historyTrips[idx] = _historyTrips[idx].copyWith(
+                  points: pts,
+                  distanceMeters: dist > 0 ? dist : _historyTrips[idx].distanceMeters,
+                );
                 changed = true;
               }
-              doc.reference.update({'active': false}).catchError((_) {});
+            }
+            doc.reference.update({'active': false}).catchError((_) {});
+
+            // If points were not embedded or distance is 0, fetch points subcollection in background
+            if (pts.isEmpty || dist <= 0.0) {
+              unawaited(ensureTripPointsLoaded(firestoreTrip));
             }
           }
           continue;
