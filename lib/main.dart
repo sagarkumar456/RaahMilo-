@@ -20,38 +20,9 @@ void main() async {
   };
 
   ErrorWidget.builder = (FlutterErrorDetails details) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.sync_rounded, size: 40, color: AppColors.primary),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Refreshing view...',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  'Recovering screen components',
-                  style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    return const ColoredBox(
+      color: Colors.transparent,
+      child: SizedBox.shrink(),
     );
   };
 

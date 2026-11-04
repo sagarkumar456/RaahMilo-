@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -151,7 +152,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         final nowMs = DateTime.now().millisecondsSinceEpoch;
         if (nowMs - _lastMarkerSetStateMs >= 75 || t >= 1.0) {
           _lastMarkerSetStateMs = nowMs;
-          setState(() {});
+          if (SchedulerBinding.instance.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) setState(() {});
+            });
+          } else {
+            setState(() {});
+          }
         }
       }
     });
@@ -921,18 +928,24 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
                       enableMultiFingerGestureRace: true,
                     ),
                     onMapReady: () {
-                      if (mounted) {
-                        setState(() => _isMapReady = true);
-                        _initDeviceLocation();
-                        _mapReadyTimer?.cancel();
-                        _mapReadyTimer = Timer(const Duration(milliseconds: 100), () {
-                          if (mounted) _refreshMapAndLocation();
-                        });
-                      }
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) {
+                          setState(() => _isMapReady = true);
+                          _initDeviceLocation();
+                          _mapReadyTimer?.cancel();
+                          _mapReadyTimer = Timer(const Duration(milliseconds: 100), () {
+                            if (mounted) _refreshMapAndLocation();
+                          });
+                        }
+                      });
                     },
                     onPositionChanged: (camera, hasGesture) {
                       if (hasGesture && _isAutoFollowEnabled) {
-                        setState(() => _isAutoFollowEnabled = false);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted && _isAutoFollowEnabled) {
+                            setState(() => _isAutoFollowEnabled = false);
+                          }
+                        });
                       }
                     },
                   ),

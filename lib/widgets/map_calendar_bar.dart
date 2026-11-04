@@ -29,7 +29,9 @@ class MapCalendarBar extends StatelessWidget {
       return DateTime(d.year, d.month, d.day);
     });
 
-    return Container(
+    return AnimatedBuilder(
+      animation: trackingService,
+      builder: (context, _) => Container(
       height: 78,
       margin: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
@@ -159,7 +161,7 @@ class MapCalendarBar extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ));
   }
 
   Widget _buildLiveButton(BuildContext context) {
@@ -250,6 +252,10 @@ class _MapMonthlyCalendarSheetState extends State<MapMonthlyCalendarSheet> {
     super.initState();
     _displayedMonth = DateTime(widget.initialDate.year, widget.initialDate.month, 1);
     _selectedDate = widget.initialDate;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      trackingService.loadHistory();
+      trackingService.syncFirestoreHistory();
+    });
   }
 
   void _prevMonth() {
@@ -272,7 +278,9 @@ class _MapMonthlyCalendarSheetState extends State<MapMonthlyCalendarSheet> {
     // Monday = 1, Sunday = 7
     final weekdayOffset = (firstDayOfMonth.weekday - 1); // 0 for Monday
 
-    return Container(
+    return AnimatedBuilder(
+      animation: trackingService,
+      builder: (context, _) => Container(
       height: MediaQuery.of(context).size.height * 0.72,
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -491,6 +499,6 @@ class _MapMonthlyCalendarSheetState extends State<MapMonthlyCalendarSheet> {
           ),
         ],
       ),
-    );
+    ));
   }
 }

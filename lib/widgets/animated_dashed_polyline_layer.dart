@@ -94,21 +94,24 @@ class _AnimatedDashedPolylineLayerState
     }
 
     final camera = MapCamera.of(context);
+    if (camera.size.x <= 0 || camera.size.y <= 0) {
+      return const SizedBox.shrink();
+    }
 
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, _) {
-        return MobileLayerTransformer(
-          child: CustomPaint(
+    return MobileLayerTransformer(
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, _) {
+          return CustomPaint(
             painter: _AnimatedDashedPolylinePainter(
               camera: camera,
               routes: widget.routes,
               phase: _controller.value,
             ),
             size: Size(camera.size.x, camera.size.y),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
