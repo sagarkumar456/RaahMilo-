@@ -85,6 +85,12 @@ class UserDeviceModel {
       if (val is String) {
         return DateTime.tryParse(val) ?? DateTime.now();
       }
+      if (val is int) {
+        return DateTime.fromMillisecondsSinceEpoch(val);
+      }
+      if (val is DateTime) {
+        return val;
+      }
       return DateTime.now();
     }
 

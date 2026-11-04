@@ -126,16 +126,18 @@ class _AnimatedDashedPolylinePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final viewportRect = Rect.fromLTWH(-40, -40, size.width + 80, size.height + 80);
+
     for (final route in routes) {
       final pts = route.points;
       if (pts.length < 2) continue;
 
-      // 1. Convert LatLng to camera canvas offsets with micro-distance deduplication
+      // 1. Convert LatLng to camera canvas offsets with micro-distance deduplication (at least 2.5px)
       final offsets = <Offset>[];
       for (int i = 0; i < pts.length; i++) {
         final off = camera.getOffsetFromOrigin(pts[i]);
         if (offsets.isEmpty ||
-            (off - offsets.last).distanceSquared >= 0.25) {
+            (off - offsets.last).distanceSquared >= 6.25) {
           offsets.add(off);
         }
       }
@@ -149,7 +151,7 @@ class _AnimatedDashedPolylinePainter extends CustomPainter {
         basePath.lineTo(offsets[i].dx, offsets[i].dy);
       }
 
-      // 3. Draw Outer Casing / Translucent Halo (exact look from screenshot)
+      // 3. Draw Outer Casing / Translucent Halo
       final casingPaint = Paint()
         ..color = route.casingColor ?? route.routeColor.withValues(alpha: 0.18)
         ..strokeWidth = route.casingWidth
@@ -167,13 +169,14 @@ class _AnimatedDashedPolylinePainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
       canvas.drawPath(basePath, routePaint);
 
-      // 5. Draw Centered White Dashes (moving forward towards car if moving, static if stopped)
+      // 5. Draw Dashes: ONLY animate when vehicle is actively moving!
+      // For stationary or completed history trips, skip heavy per-frame extractPath to keep UI at 60 FPS
+      if (!route.isMoving) continue;
+
       final dashLength = route.dashLength;
       final gapLength = route.gapLength;
       final patternLength = dashLength + gapLength;
-
-      // Offset advances along the path (0 -> L) towards the vehicle
-      final phaseOffset = (route.isMoving ? phase : 0.0) * patternLength;
+      final phaseOffset = phase * patternLength;
 
       final dashPaint = Paint()
         ..color = Colors.white
@@ -183,13 +186,14 @@ class _AnimatedDashedPolylinePainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
 
       final dashPath = Path();
+      int dashesExtracted = 0;
 
       for (final metric in basePath.computeMetrics()) {
         final totalLength = metric.length;
         if (totalLength <= 0) continue;
 
         double current = -patternLength + phaseOffset;
-        while (current < totalLength) {
+        while (current < totalLength && dashesExtracted < 80) {
           final dashStart = current;
           final dashEnd = current + dashLength;
 
@@ -197,10 +201,14 @@ class _AnimatedDashedPolylinePainter extends CustomPainter {
             final startClamp = math.max(0.0, dashStart);
             final endClamp = math.min(totalLength, dashEnd);
             if (endClamp > startClamp) {
-              dashPath.addPath(
-                metric.extractPath(startClamp, endClamp),
-                Offset.zero,
-              );
+              final tangent = metric.getTangentForOffset(startClamp);
+              if (tangent == null || viewportRect.contains(tangent.position)) {
+                dashPath.addPath(
+                  metric.extractPath(startClamp, endClamp),
+                  Offset.zero,
+                );
+                dashesExtracted++;
+              }
             }
           }
           current += patternLength;
@@ -213,8 +221,11 @@ class _AnimatedDashedPolylinePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_AnimatedDashedPolylinePainter oldDelegate) {
-    if (oldDelegate.phase != phase ||
-        oldDelegate.camera != camera ||
+    final hasMoving = routes.any((r) => r.isMoving && r.points.length >= 2);
+    if (hasMoving && oldDelegate.phase != phase) {
+      return true;
+    }
+    if (oldDelegate.camera != camera ||
         oldDelegate.routes.length != routes.length) {
       return true;
     }

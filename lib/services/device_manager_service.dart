@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user_device_model.dart';
@@ -12,6 +14,19 @@ import 'auth_service.dart';
 class DeviceManagerService extends ChangeNotifier {
   static final DeviceManagerService _instance = DeviceManagerService._internal();
   factory DeviceManagerService() => _instance;
+
+  @override
+  void notifyListeners() {
+    final binding = WidgetsBinding.instance;
+    final phase = binding.schedulerPhase;
+    if (phase == SchedulerPhase.idle || phase == SchedulerPhase.postFrameCallbacks) {
+      super.notifyListeners();
+    } else {
+      binding.addPostFrameCallback((_) {
+        super.notifyListeners();
+      });
+    }
+  }
 
   static const MethodChannel _nativeChannel = MethodChannel('com.trackmyphone.gps/alert_sound');
   static const String _keyDeviceId = 'user_device_unique_id';

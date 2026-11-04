@@ -128,6 +128,7 @@ class TripDirectionHelper {
       }
 
       // Single one-way trip
+      final realEnd = trip.endedAt ?? (trip.points.isNotEmpty ? trip.points.last.timestamp : trip.startedAt);
       segments.add(
         TripRouteSegment(
           id: trip.id,
@@ -137,7 +138,7 @@ class TripDirectionHelper {
           casingColor: colorOutward.withValues(alpha: 0.25),
           points: routeCoords,
           startedAt: trip.startedAt,
-          endedAt: trip.endedAt,
+          endedAt: realEnd,
           distanceMeters: trip.distanceMeters,
           isReturn: false,
           tripNumber: 1,
@@ -166,6 +167,8 @@ class TripDirectionHelper {
         displayCoords = offsetPolyline(routeCoords, offset);
       }
 
+      final tripEnd = trip.endedAt ?? (trip.points.isNotEmpty ? trip.points.last.timestamp : trip.startedAt);
+
       segments.add(
         TripRouteSegment(
           id: trip.id,
@@ -175,7 +178,7 @@ class TripDirectionHelper {
           casingColor: color.withValues(alpha: 0.25),
           points: displayCoords,
           startedAt: trip.startedAt,
-          endedAt: trip.endedAt,
+          endedAt: tripEnd,
           distanceMeters: trip.distanceMeters,
           isReturn: isReturn,
           tripNumber: i + 1,
@@ -228,40 +231,40 @@ class TripDirectionHelper {
 
       final turnaroundPt = coords[maxIdx];
 
-      return [
-        TripRouteSegment(
-          id: '${trip.id}_outward',
-          title: 'Outward Route (Leg 1)',
-          directionLabel: 'Trip 1 • Outward',
-          primaryColor: colorOutward,
-          casingColor: colorOutward.withValues(alpha: 0.25),
-          points: shiftedOutward,
-          startedAt: trip.startedAt,
-          endedAt: trip.startedAt.add(
-            Duration(minutes: ((trip.endedAt ?? DateTime.now()).difference(trip.startedAt).inMinutes ~/ 2)),
+        final halfDuration = Duration(seconds: trip.duration.inSeconds ~/ 2);
+        final splitTime = trip.startedAt.add(halfDuration);
+        final realEnd = trip.endedAt ?? (trip.points.isNotEmpty ? trip.points.last.timestamp : splitTime);
+
+        return [
+          TripRouteSegment(
+            id: '${trip.id}_outward',
+            title: 'Outward Route (Leg 1)',
+            directionLabel: 'Trip 1 • Outward',
+            primaryColor: colorOutward,
+            casingColor: colorOutward.withValues(alpha: 0.25),
+            points: shiftedOutward,
+            startedAt: trip.startedAt,
+            endedAt: splitTime,
+            distanceMeters: trip.distanceMeters / 2,
+            isReturn: false,
+            tripNumber: 1,
+            turnaroundPoint: turnaroundPt,
           ),
-          distanceMeters: trip.distanceMeters / 2,
-          isReturn: false,
-          tripNumber: 1,
-          turnaroundPoint: turnaroundPt,
-        ),
-        TripRouteSegment(
-          id: '${trip.id}_return',
-          title: 'Return Route (Leg 2)',
-          directionLabel: 'Trip 2 • Return',
-          primaryColor: colorReturn,
-          casingColor: colorReturn.withValues(alpha: 0.25),
-          points: shiftedReturn,
-          startedAt: trip.startedAt.add(
-            Duration(minutes: ((trip.endedAt ?? DateTime.now()).difference(trip.startedAt).inMinutes ~/ 2)),
+          TripRouteSegment(
+            id: '${trip.id}_return',
+            title: 'Return Route (Leg 2)',
+            directionLabel: 'Trip 2 • Return',
+            primaryColor: colorReturn,
+            casingColor: colorReturn.withValues(alpha: 0.25),
+            points: shiftedReturn,
+            startedAt: splitTime,
+            endedAt: realEnd,
+            distanceMeters: trip.distanceMeters / 2,
+            isReturn: true,
+            tripNumber: 2,
+            turnaroundPoint: turnaroundPt,
           ),
-          endedAt: trip.endedAt,
-          distanceMeters: trip.distanceMeters / 2,
-          isReturn: true,
-          tripNumber: 2,
-          turnaroundPoint: turnaroundPt,
-        ),
-      ];
+        ];
     }
 
     return null;

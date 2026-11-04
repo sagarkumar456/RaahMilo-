@@ -991,7 +991,9 @@ class DashboardScreen extends StatelessWidget {
     return StreamBuilder<List<SharedDeviceModel>>(
       stream: shareService.getSharedWithMeStream(),
       builder: (context, snapshot) {
-        final devices = snapshot.data ?? [];
+        final devices = (snapshot.hasError || snapshot.data == null)
+            ? <SharedDeviceModel>[]
+            : snapshot.data!;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,

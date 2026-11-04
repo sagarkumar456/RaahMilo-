@@ -1,10 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import '../models/app_notification.dart';
 import 'alert_sound_service.dart';
 
 class NotificationService extends ChangeNotifier {
   static final NotificationService _instance = NotificationService._internal();
   factory NotificationService() => _instance;
+
+  @override
+  void notifyListeners() {
+    final binding = WidgetsBinding.instance;
+    final phase = binding.schedulerPhase;
+    if (phase == SchedulerPhase.idle || phase == SchedulerPhase.postFrameCallbacks) {
+      super.notifyListeners();
+    } else {
+      binding.addPostFrameCallback((_) {
+        super.notifyListeners();
+      });
+    }
+  }
 
   NotificationService._internal() {
     _initDefaults();

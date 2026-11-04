@@ -1,12 +1,26 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 class AuthService extends ChangeNotifier {
   static final AuthService _instance = AuthService._internal();
   factory AuthService() => _instance;
 
   AuthService._internal();
+
+  @override
+  void notifyListeners() {
+    final binding = WidgetsBinding.instance;
+    final phase = binding.schedulerPhase;
+    if (phase == SchedulerPhase.idle || phase == SchedulerPhase.postFrameCallbacks) {
+      super.notifyListeners();
+    } else {
+      binding.addPostFrameCallback((_) {
+        super.notifyListeners();
+      });
+    }
+  }
 
   User? get currentUser {
     try {

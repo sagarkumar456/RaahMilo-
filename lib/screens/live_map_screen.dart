@@ -67,6 +67,7 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
   ll.LatLng? _targetMarkerCoord;
   ll.LatLng? _prevMarkerCoord;
   double _lastValidHeading = 0.0;
+  int _lastMarkerSetStateMs = 0;
   AnimationController? _markerMoveController;
   Animation<double>? _markerMoveAnimation;
 
@@ -146,12 +147,11 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
           _prevMarkerCoord!.latitude + (_targetMarkerCoord!.latitude - _prevMarkerCoord!.latitude) * t,
           _prevMarkerCoord!.longitude + (_targetMarkerCoord!.longitude - _prevMarkerCoord!.longitude) * t,
         );
-        setState(() {
-          _animatedMarkerCoord = interp;
-        });
-
-        if (_isAutoFollowEnabled && trackingService.active) {
-          _safeMoveMap(interp, _safeZoom);
+        _animatedMarkerCoord = interp;
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        if (nowMs - _lastMarkerSetStateMs >= 75 || t >= 1.0) {
+          _lastMarkerSetStateMs = nowMs;
+          setState(() {});
         }
       }
     });
@@ -230,6 +230,9 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         _prevMarkerCoord = _animatedMarkerCoord ?? _targetMarkerCoord;
         _targetMarkerCoord = newCoord;
         _markerMoveController?.forward(from: 0.0);
+        if (_isAutoFollowEnabled && trackingService.active) {
+          _animatedMapMove(newCoord, _safeZoom, durationMs: 600);
+        }
       }
     }
 
@@ -1532,14 +1535,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     int totalMinutes = 0;
     for (final t in dayTrips) {
       totalMeters += t.distanceMeters;
-      final end = t.endedAt ?? t.startedAt;
-      totalMinutes += end.difference(t.startedAt).inMinutes;
+      totalMinutes += t.duration.inMinutes;
     }
     final km = totalMeters / 1000.0;
     final kmStr = '${km.toStringAsFixed(1)} km';
     final durationStr = totalMinutes >= 60
         ? '${totalMinutes ~/ 60} hr ${totalMinutes % 60} min'
-        : '$totalMinutes min';
+        : (totalMinutes > 0 ? '$totalMinutes min' : '< 1 min');
     final dateStr = DateFormat('EEEE, dd MMM yyyy').format(_selectedDate);
 
     final allStoppages = <StoppageModel>[];
@@ -1776,14 +1778,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
     int totalMinutes = 0;
     for (final t in dayTrips) {
       totalMeters += t.distanceMeters;
-      final end = t.endedAt ?? t.startedAt;
-      totalMinutes += end.difference(t.startedAt).inMinutes;
+      totalMinutes += t.duration.inMinutes;
     }
     final km = totalMeters / 1000.0;
     final kmStr = '${km.toStringAsFixed(1)} km';
     final durationStr = totalMinutes >= 60
         ? '${totalMinutes ~/ 60}h ${totalMinutes % 60}m'
-        : '$totalMinutes min';
+        : (totalMinutes > 0 ? '$totalMinutes min' : '< 1 min');
 
     final isToday = _selectedDate.year == DateTime.now().year &&
         _selectedDate.month == DateTime.now().month &&

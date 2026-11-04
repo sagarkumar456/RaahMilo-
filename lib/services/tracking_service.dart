@@ -255,6 +255,8 @@ class TrackingService extends ChangeNotifier {
   String? _lastError;
   String? get lastError => _lastError;
 
+  DateTime? _lastSpeedAlertTime;
+
   final List<TripModel> _historyTrips = [];
   List<TripModel> get historyTrips {
     final list = List<TripModel>.from(_historyTrips);
@@ -883,19 +885,12 @@ class TrackingService extends ChangeNotifier {
       );
 
       // Adaptive anchor radius based on sensor accuracy:
-      // High-accuracy outdoor fixes (accuracy <= 10m) have tight 7.5m tolerance.
-      // Indoor / in-bag fixes scale up to 20m tolerance to absorb indoor bounce.
-      final anchorTolerance = math.max(7.5, math.min(20.0, candidate.accuracy * 0.55));
+      // High-accuracy outdoor fixes (accuracy <= 10m) have tight 6.5m tolerance.
+      // Indoor / in-bag fixes scale up to 12.0m tolerance (reduced from 20m) so real movement breaks out quickly.
+      final anchorTolerance = math.max(6.5, math.min(12.0, candidate.accuracy * 0.45));
 
-      // Inside anchor bubble: reject satellite drift unless speed indicates clear breakout motion
-      // Lowered to 0.7 m/s so normal walking pace (2.5 - 4 km/h) with phone inside a bag/pocket breaks out cleanly.
+      // Inside anchor bubble: reject satellite drift completely while stationary
       if (distFromAnchor < anchorTolerance) {
-        if (candidate.speed >= 0.7 && distFromAnchor >= 4.0) {
-          return true; // Steady walking breakout motion with phone in bag
-        }
-        if (calcSpeed >= 0.7 && distFromAnchor >= 4.5) {
-          return true; // Steady walking breakout
-        }
         return false; // Stationary satellite jitter! Anchor remains locked.
       }
 
@@ -911,9 +906,8 @@ class TrackingService extends ChangeNotifier {
     }
 
     // 5. In-Motion Movement Evaluation (phone is actively moving):
-    // Discard sub-noise sensor jitter (< 1.8m) to avoid crowding points,
-    // but capture all turns, bends, and corner waypoints faithfully.
-    if (step < 1.8) return false;
+    // Discard sub-noise sensor jitter (< 1.6m), but capture all turns, bends, and corner waypoints faithfully.
+    if (step < 1.6) return false;
 
     // Discard gross cellular tower triangulation fixes while moving (> 250m)
     if (candidate.accuracy > 250.0) return false;
@@ -1037,9 +1031,12 @@ class TrackingService extends ChangeNotifier {
     // Check geofences
     GeofenceService().checkLocation(p);
 
-    // Speed alert check (> 80 km/h)
+    // Speed alert check (> 80 km/h with 5-minute debounce cooldown)
     final speedKmh = (p.speed.clamp(0, 999) * 3.6);
-    if (speedKmh > 80) {
+    if (speedKmh > 80 &&
+        (_lastSpeedAlertTime == null ||
+            DateTime.now().difference(_lastSpeedAlertTime!).inMinutes >= 5)) {
+      _lastSpeedAlertTime = DateTime.now();
       NotificationService().addNotification(
         title: 'Speed Alert',
         subtitle: 'Speed crossed ${speedKmh.toStringAsFixed(0)} km/h',
@@ -1189,7 +1186,7 @@ class TrackingService extends ChangeNotifier {
   LocationSettings _createLocationSettings() {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
-        accuracy: LocationAccuracy.high,
+        accuracy: LocationAccuracy.bestForNavigation,
         distanceFilter: 0, // 0 ensures Android delivers regular time-based updates even when phone is in bag/pocket with screen off
         forceLocationManager: false, // Google Play Services Fused Location
         intervalDuration: const Duration(seconds: 3), // 3-second consistent stream
@@ -1199,6 +1196,7 @@ class TrackingService extends ChangeNotifier {
           enableWakeLock: true,
           setOngoing: true,
           color: Color(0xFF10B981),
+          notificationIcon: AndroidResource(name: 'ic_launcher'),
         ),
       );
     } else if (defaultTargetPlatform == TargetPlatform.iOS ||

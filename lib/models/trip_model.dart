@@ -94,13 +94,35 @@ class TripModel {
     return '${km.toStringAsFixed(1)} km';
   }
 
-  String get formattedDuration {
-    final end = endedAt ?? DateTime.now();
-    final diff = end.difference(startedAt);
-    if (diff.inHours > 0) {
-      return '${diff.inHours} hr ${diff.inMinutes % 60} min';
+  Duration get duration {
+    if (isActive) {
+      final start = points.isNotEmpty ? points.first.timestamp.toLocal() : startedAt.toLocal();
+      final diff = DateTime.now().difference(start);
+      return diff.isNegative ? Duration.zero : diff;
     }
-    return '${diff.inMinutes} min';
+    if (endedAt != null) {
+      final diff = endedAt!.toLocal().difference(startedAt.toLocal());
+      return diff.isNegative ? diff.abs() : diff;
+    }
+    if (points.length >= 2) {
+      final diff = points.last.timestamp.toLocal().difference(points.first.timestamp.toLocal());
+      return diff.isNegative ? diff.abs() : diff;
+    }
+    return Duration.zero;
+  }
+
+  String get formattedDuration {
+    final d = duration;
+    if (d.inHours > 0) {
+      return '${d.inHours} hr ${d.inMinutes % 60} min';
+    }
+    if (d.inMinutes > 0) {
+      return '${d.inMinutes} min';
+    }
+    if (d.inSeconds > 0) {
+      return '${d.inSeconds} sec';
+    }
+    return '0 min';
   }
 
   String get formattedDate {
@@ -109,15 +131,19 @@ class TripModel {
 
   String get formattedTimeRange {
     final startStr = DateFormat('hh:mm a').format(startedAt.toLocal());
-    final endStr = endedAt != null ? DateFormat('hh:mm a').format(endedAt!.toLocal()) : 'Live';
+    final endStr = endedAt != null
+        ? DateFormat('hh:mm a').format(endedAt!.toLocal())
+        : (points.length >= 2
+            ? DateFormat('hh:mm a').format(points.last.timestamp.toLocal())
+            : (isActive ? 'Live' : startStr));
     return '${DateFormat('dd MMM yyyy').format(startedAt.toLocal())} • $startStr - $endStr';
   }
 
   double get avgSpeedKmh {
-    final end = endedAt ?? DateTime.now();
-    final diffHours = end.difference(startedAt).inSeconds / 3600.0;
+    final diffHours = duration.inSeconds / 3600.0;
     if (diffHours <= 0) return 0.0;
-    return (distanceMeters / 1000.0) / diffHours;
+    final speed = (distanceMeters / 1000.0) / diffHours;
+    return speed.clamp(0.0, 180.0);
   }
 
   List<StoppageModel> get stoppages => extractStoppages(points);
