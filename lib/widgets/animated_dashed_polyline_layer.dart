@@ -19,11 +19,11 @@ class RoutePolylineStyle {
     required this.points,
     required this.routeColor,
     this.casingColor,
-    this.strokeWidth = 6.2,
-    this.casingWidth = 12.0,
-    this.dashWidth = 2.8,
-    this.dashLength = 13.0,
-    this.gapLength = 8.5,
+    this.strokeWidth = 7.0,
+    this.casingWidth = 13.0,
+    this.dashWidth = 3.0,
+    this.dashLength = 12.0,
+    this.gapLength = 8.0,
     this.isMoving = false,
   });
 }
@@ -172,14 +172,16 @@ class _AnimatedDashedPolylinePainter extends CustomPainter {
         ..style = PaintingStyle.stroke;
       canvas.drawPath(basePath, routePaint);
 
-      // 5. Draw Dashes: ONLY animate when vehicle is actively moving!
-      // For stationary or completed history trips, skip heavy per-frame extractPath to keep UI at 60 FPS
-      if (!route.isMoving) continue;
-
+      // 5. Draw Centerline White Dashes (Reference design with moving white dashes)
+      // When route.isMoving is true, dashes smoothly march along the route in real-time.
+      // When stationary or static, dashes are rendered with a fixed offset so the road styling is preserved.
       final dashLength = route.dashLength;
       final gapLength = route.gapLength;
       final patternLength = dashLength + gapLength;
-      final phaseOffset = phase * patternLength;
+      if (patternLength <= 0) continue;
+
+      final effectivePhase = route.isMoving ? phase : 0.0;
+      final phaseOffset = effectivePhase * patternLength;
 
       final dashPaint = Paint()
         ..color = Colors.white
@@ -196,7 +198,7 @@ class _AnimatedDashedPolylinePainter extends CustomPainter {
         if (totalLength <= 0) continue;
 
         double current = -patternLength + phaseOffset;
-        while (current < totalLength && dashesExtracted < 80) {
+        while (current < totalLength && dashesExtracted < 500) {
           final dashStart = current;
           final dashEnd = current + dashLength;
 

@@ -857,12 +857,16 @@ class DashboardScreen extends StatelessWidget {
                                       ),
                                     ),
                                     const SizedBox(width: 4),
-                                    Text(
-                                      'Last seen ${dev.lastSeenFormatted}',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.grey.shade600,
+                                    Flexible(
+                                      child: Text(
+                                        'Last seen ${dev.lastSeenFormatted}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
                                   ],
@@ -929,6 +933,7 @@ class DashboardScreen extends StatelessWidget {
                               backgroundColor: isCurrent ? AppColors.navyDark : AppColors.primary,
                               foregroundColor: Colors.white,
                               elevation: 0,
+                              minimumSize: const Size(0, 36),
                               padding: const EdgeInsets.symmetric(vertical: 8),
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10),
@@ -950,6 +955,7 @@ class DashboardScreen extends StatelessWidget {
                           style: OutlinedButton.styleFrom(
                             side: const BorderSide(color: AppColors.danger),
                             foregroundColor: AppColors.danger,
+                            minimumSize: const Size(0, 36),
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),

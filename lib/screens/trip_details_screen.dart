@@ -779,13 +779,13 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> with TickerProvid
                       RoutePolylineStyle(
                         points: displayRoute,
                         routeColor: const Color(0xFF10B981),
-                        casingColor: const Color(0xFF10B981).withValues(alpha: 0.20),
-                        strokeWidth: 6.2,
-                        casingWidth: 12.0,
-                        dashWidth: 2.8,
-                        dashLength: 13.0,
-                        gapLength: 8.5,
-                        isMoving: _isPlaying, // Flows towards car during playback, stops when paused/stationary
+                        casingColor: const Color(0xFF10B981).withValues(alpha: 0.22),
+                        strokeWidth: 7.0,
+                        casingWidth: 13.0,
+                        dashWidth: 3.0,
+                        dashLength: 12.0,
+                        gapLength: 8.0,
+                        isMoving: _isPlaying, // Flows towards car during playback, stops when paused
                       ),
                     ],
                   ),

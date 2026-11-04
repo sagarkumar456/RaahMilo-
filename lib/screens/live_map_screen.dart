@@ -651,13 +651,13 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
               RoutePolylineStyle(
                 points: pts,
                 routeColor: seg.primaryColor,
-                casingColor: seg.casingColor,
-                strokeWidth: 6.2,
-                casingWidth: 12.0,
-                dashWidth: 2.8,
-                dashLength: 13.0,
-                gapLength: 8.5,
-                isMoving: false, // Completed history trips remain static
+                casingColor: seg.casingColor ?? seg.primaryColor.withValues(alpha: 0.22),
+                strokeWidth: 7.0,
+                casingWidth: 13.0,
+                dashWidth: 3.0,
+                dashLength: 12.0,
+                gapLength: 8.0,
+                isMoving: isToday, // On today's map, white dashes continuously move!
               ),
             );
           }
@@ -763,18 +763,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> with TickerProviderStateM
         // 2. Render Active Live Tracking Route (if currently tracking on today's view or unfinalized points exist)
         final hasDrawnTodaySegments = segments.any((s) => s.points.isNotEmpty);
         if (hasLiveRoute && isToday && (isActive || !hasDrawnTodaySegments)) {
-          final liveColor = dayTrips.isNotEmpty ? TripDirectionHelper.colorReturn : TripDirectionHelper.colorOutward;
+          final liveColor = TripDirectionHelper.colorPathGreen;
           animatedRoutes.add(
             RoutePolylineStyle(
               points: liveRoutePoints,
               routeColor: liveColor,
-              casingColor: liveColor.withValues(alpha: 0.20),
-              strokeWidth: 6.2,
-              casingWidth: 12.0,
-              dashWidth: 2.8,
-              dashLength: 13.0,
-              gapLength: 8.5,
-              isMoving: isMoving, // Animate dashes forward towards car when moving, stop when stationary!
+              casingColor: liveColor.withValues(alpha: 0.22),
+              strokeWidth: 7.0,
+              casingWidth: 13.0,
+              dashWidth: 3.0,
+              dashLength: 12.0,
+              gapLength: 8.0,
+              isMoving: true, // Live route dashes ALWAYS keep moving!
             ),
           );
 
